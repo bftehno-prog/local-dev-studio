@@ -539,7 +539,6 @@ fn start_project(id: String, state: State<AppState>) -> Result<Project, String> 
     if settings.clear_next_before_start && project.project_type == "next" {
         clear_cache_at(Path::new(&project.path))?;
     }
-    install_dependencies_if_missing(&project, &settings, &state.db_path)?;
     project.status = "starting".to_string();
     project.port = Some(port);
     upsert_project(&state.db_path, &project)?;
@@ -559,7 +558,6 @@ fn start_project(id: String, state: State<AppState>) -> Result<Project, String> 
     let pid = child.id();
     stream_child_logs(&state.db_path, &project, child.stdout.take(), "server");
     stream_child_logs(&state.db_path, &project, child.stderr.take(), "error");
-    wait_for_project_ready(&mut child, port, settings.process_timeout, &state.db_path, &project)?;
     state
         .processes
         .lock()
@@ -570,14 +568,14 @@ fn start_project(id: String, state: State<AppState>) -> Result<Project, String> 
     let conn = connect(&state.db_path)?;
     conn.execute(
         "INSERT OR REPLACE INTO processes (project_id, pid, command, cwd, port, started_at, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'running')",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'starting')",
         params![project.id, pid, command_spec.display, project.path, port, started_at],
     )
     .map_err(|error| error.to_string())?;
-    project.status = "running".to_string();
     project.command = Some(command_spec.display);
     project.updated_at = now();
     upsert_project(&state.db_path, &project)?;
+    monitor_project_startup(state.db_path.clone(), project.id.clone(), pid, port, settings.process_timeout);
     if settings.open_external_browser_on_start {
         let _ = open::that(format!("http://localhost:{}", port));
     }
@@ -880,7 +878,6 @@ fn create_sandbox(template_id: String, state: State<AppState>) -> Result<Project
         + 1;
     let name = format!("sandbox-{:03}", index);
     let project = create_project_from_template(&template_id, Some(name), PathBuf::from(&settings.sandboxes_folder), state.clone())?;
-    install_dependencies_if_needed(&project, &settings, &state.db_path)?;
     let started = start_project(project.id.clone(), state.clone())?;
     let conn = connect(&state.db_path)?;
     conn.execute(
@@ -997,6 +994,36 @@ struct CommandSpec {
     display: String,
 }
 
+fn shell_install_then_run(program: &str, run_args: &[String], display: &str) -> CommandSpec {
+    let install = shell_quote(program).to_string() + " install";
+    let run = std::iter::once(shell_quote(program))
+        .chain(run_args.iter().map(|arg| shell_quote(arg)))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let command_line = format!("{} && {}", install, run);
+    if cfg!(windows) {
+        CommandSpec {
+            program: "cmd".to_string(),
+            args: vec!["/C".to_string(), command_line],
+            display: display.to_string(),
+        }
+    } else {
+        CommandSpec {
+            program: "sh".to_string(),
+            args: vec!["-c".to_string(), command_line],
+            display: display.to_string(),
+        }
+    }
+}
+
+fn shell_quote(value: &str) -> String {
+    if cfg!(windows) {
+        format!("\"{}\"", value.replace('"', "\\\""))
+    } else {
+        format!("'{}'", value.replace('\'', "'\\''"))
+    }
+}
+
 fn build_command(project: &Project, settings: &Settings, port: u16) -> Result<CommandSpec, String> {
     match project.project_type.as_str() {
         "next" => {
@@ -1008,6 +1035,9 @@ fn build_command(project: &Project, settings: &Settings, port: u16) -> Result<Co
                 args.push("--turbopack".to_string());
             }
             args.extend(["-H", "0.0.0.0", "-p", &port.to_string()].iter().map(|value| value.to_string()));
+            if !Path::new(&project.path).join("node_modules").exists() {
+                return Ok(shell_install_then_run(&program, &args, &format!("{} install && {} {}", program, program, args.join(" "))));
+            }
             Ok(CommandSpec { display: format!("{} {}", program, args.join(" ")), program, args })
         }
         "vite" | "astro" => {
@@ -1016,6 +1046,9 @@ fn build_command(project: &Project, settings: &Settings, port: u16) -> Result<Co
             let program = resolve_runtime(package_manager.as_str(), settings);
             let mut args = package_dev_args(package_manager.as_str());
             args.extend(["--host", "0.0.0.0", "--port", &port.to_string()].iter().map(|value| value.to_string()));
+            if !Path::new(&project.path).join("node_modules").exists() {
+                return Ok(shell_install_then_run(&program, &args, &format!("{} install && {} {}", program, program, args.join(" "))));
+            }
             Ok(CommandSpec { display: format!("{} {}", program, args.join(" ")), program, args })
         }
         "php" => {
@@ -1283,24 +1316,49 @@ fn parse_environment_variables(raw: &str) -> Result<Vec<(String, String)>, Strin
     Ok(vars)
 }
 
-fn wait_for_project_ready(child: &mut Child, port: u16, timeout_seconds: u32, db_path: &Path, project: &Project) -> Result<(), String> {
-    let timeout = Duration::from_secs(timeout_seconds.max(1) as u64);
-    let started = Instant::now();
-    while started.elapsed() < timeout {
-        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
-            let message = format!("Process exited before the server became ready: {}", status);
-            let _ = insert_log(db_path, Some(&project.id), "error", &message);
-            return Err(message);
+fn monitor_project_startup(db_path: PathBuf, project_id: String, pid: u32, port: u16, timeout_seconds: u32) {
+    thread::spawn(move || {
+        let timeout = Duration::from_secs(timeout_seconds.max(1) as u64);
+        let started = Instant::now();
+        while started.elapsed() < timeout {
+            if !process_exists(pid) {
+                let _ = update_process_status(&db_path, &project_id, "error");
+                let _ = update_project_status(&db_path, &project_id, "error");
+                let _ = insert_log(&db_path, Some(&project_id), "error", "Process exited before the server became ready");
+                return;
+            }
+            if !is_port_free(port) {
+                let _ = update_process_status(&db_path, &project_id, "running");
+                let _ = update_project_status(&db_path, &project_id, "running");
+                let _ = insert_log(&db_path, Some(&project_id), "server", &format!("Server ready on port {}", port));
+                return;
+            }
+            thread::sleep(Duration::from_millis(350));
         }
-        if !is_port_free(port) {
-            return Ok(());
-        }
-        thread::sleep(Duration::from_millis(250));
-    }
-    let _ = child.kill();
-    let message = format!("Server did not open port {} within {} seconds.", port, timeout_seconds.max(1));
-    let _ = insert_log(db_path, Some(&project.id), "error", &message);
-    Err(message)
+        let _ = update_process_status(&db_path, &project_id, "error");
+        let _ = update_project_status(&db_path, &project_id, "error");
+        let _ = insert_log(&db_path, Some(&project_id), "error", &format!("Server did not open port {} within {} seconds.", port, timeout_seconds.max(1)));
+    });
+}
+
+fn process_exists(pid: u32) -> bool {
+    let mut sys = System::new_all();
+    sys.refresh_all();
+    sys.process(Pid::from_u32(pid)).is_some()
+}
+
+fn update_process_status(db_path: &Path, project_id: &str, status: &str) -> Result<(), String> {
+    connect(db_path)?
+        .execute("UPDATE processes SET status = ?2 WHERE project_id = ?1", params![project_id, status])
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn update_project_status(db_path: &Path, project_id: &str, status: &str) -> Result<(), String> {
+    connect(db_path)?
+        .execute("UPDATE projects SET status = ?2, updated_at = ?3 WHERE id = ?1", params![project_id, status, now()])
+        .map(|_| ())
+        .map_err(|error| error.to_string())
 }
 
 fn stored_pid(db_path: &Path, project_id: &str) -> Result<Option<u32>, String> {
@@ -1358,34 +1416,6 @@ fn prune_logs(db_path: &Path, retention_days: u32) -> Result<(), String> {
         .execute("DELETE FROM logs WHERE created_at < ?1", params![cutoff])
         .map(|_| ())
         .map_err(|error| error.to_string())
-}
-
-fn install_dependencies_if_missing(project: &Project, settings: &Settings, db_path: &Path) -> Result<(), String> {
-    if !matches!(project.project_type.as_str(), "next" | "vite" | "astro") || Path::new(&project.path).join("node_modules").exists() {
-        return Ok(());
-    }
-    install_dependencies_if_needed(project, settings, db_path)
-}
-
-fn install_dependencies_if_needed(project: &Project, settings: &Settings, db_path: &Path) -> Result<(), String> {
-    if !matches!(project.project_type.as_str(), "next" | "vite" | "astro") {
-        return Ok(());
-    }
-    let manager = package_manager(settings);
-    let program = resolve_runtime(manager.as_str(), settings);
-    insert_log(db_path, Some(&project.id), "installing", &format!("Installing dependencies with {} install", manager))?;
-    let output = Command::new(&program)
-        .arg("install")
-        .current_dir(&project.path)
-        .env("PATH", runtime_path(settings))
-        .output()
-        .map_err(|error| format!("{} install failed to start. Check runtime path. Details: {}", manager, error))?;
-    insert_log(db_path, Some(&project.id), "build", &String::from_utf8_lossy(&output.stdout))?;
-    if !output.status.success() {
-        insert_log(db_path, Some(&project.id), "error", &String::from_utf8_lossy(&output.stderr))?;
-        return Err("pnpm install finished with an error. See Logs for details.".to_string());
-    }
-    Ok(())
 }
 
 fn unique_path(base: &Path, name: &str) -> PathBuf {
