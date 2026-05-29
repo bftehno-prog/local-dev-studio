@@ -22,6 +22,7 @@
 - First-run onboarding screen backed by persisted settings.
 - Project Detail panel with runtime, command, preview URL, trust state, actions and recent logs.
 - Shared Hosting Compatibility Checker for PHP/static projects.
+- ZIP template preflight validation before extraction.
 
 ### Changed
 
@@ -38,6 +39,7 @@
 - New users see runtime, folder, port and preview checks before entering the main workspace.
 - The Projects screen now exposes selected project details without leaving the existing workflow.
 - PHP/static projects can be scanned for localhost URLs, Windows paths, mixed content and common shared-hosting entrypoint issues.
+- Template ZIP archives are now fully checked for structure, traversal paths, file count and expanded size before any files are written.
 
 ### Fixed
 

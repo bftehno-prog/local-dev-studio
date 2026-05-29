@@ -29,7 +29,7 @@ Project paths must exist, be directories and resolve through canonicalization. T
 
 ## ZIP Import
 
-ZIP imports require `.zip` files with `template.json` and a `files/` directory. Extraction uses enclosed path checks so archive entries cannot escape the target directory. The importer also enforces archive size, file count, uncompressed size, project type and package manager allow-lists.
+ZIP imports require `.zip` files with `template.json` and a `files/` directory. The importer validates archive structure, enclosed paths, file count and uncompressed size before extraction, so rejected archives do not write template files. Extraction still uses enclosed path checks so archive entries cannot escape the target directory. The importer also enforces archive size, project type and package manager allow-lists.
 
 ## Environment Variables
 

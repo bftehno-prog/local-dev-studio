@@ -14,6 +14,8 @@ Templates can be built in or imported from ZIP archives.
 
 ZIP files can be selected with the native picker, pasted as a path or dropped into the import zone.
 
+The importer validates the archive before extraction. If the archive fails validation, no template files are written.
+
 Requirements:
 
 - file extension must be `.zip`;

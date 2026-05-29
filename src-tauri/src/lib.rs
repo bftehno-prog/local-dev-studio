@@ -2551,30 +2551,13 @@ fn zip_dir(source: &Path, target: &Path) -> Result<(), String> {
 fn extract_zip(source: &Path, target: &Path) -> Result<(), String> {
     let file = fs::File::open(source).map_err(|error| error.to_string())?;
     let mut archive = zip::ZipArchive::new(file).map_err(|error| error.to_string())?;
-    if archive.len() > 2_000 {
-        return Err(
-            "ZIP archive contains too many files. Maximum supported file count is 2000."
-                .to_string(),
-        );
-    }
+    validate_template_zip_archive(&mut archive)?;
     let root = target.canonicalize().map_err(|error| error.to_string())?;
-    let mut total_uncompressed = 0_u64;
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).map_err(|error| error.to_string())?;
         let Some(enclosed) = file.enclosed_name().map(|path| path.to_path_buf()) else {
-            continue;
-        };
-        if enclosed.is_absolute()
-            || enclosed
-                .components()
-                .any(|component| matches!(component, std::path::Component::ParentDir))
-        {
             return Err("ZIP contains an unsafe path.".to_string());
-        }
-        total_uncompressed = total_uncompressed.saturating_add(file.size());
-        if total_uncompressed > 250 * 1024 * 1024 {
-            return Err("ZIP archive expands to more than 250 MB.".to_string());
-        }
+        };
         let out_path = root.join(enclosed);
         if !out_path.starts_with(&root) {
             return Err("ZIP contains an unsafe path.".to_string());
@@ -2588,6 +2571,59 @@ fn extract_zip(source: &Path, target: &Path) -> Result<(), String> {
             let mut output = fs::File::create(&out_path).map_err(|error| error.to_string())?;
             std::io::copy(&mut file, &mut output).map_err(|error| error.to_string())?;
         }
+    }
+    Ok(())
+}
+
+fn validate_template_zip_archive(archive: &mut zip::ZipArchive<fs::File>) -> Result<(), String> {
+    if archive.is_empty() {
+        return Err("ZIP archive is empty.".to_string());
+    }
+    if archive.len() > 2_000 {
+        return Err(
+            "ZIP archive contains too many files. Maximum supported file count is 2000."
+                .to_string(),
+        );
+    }
+    let mut total_uncompressed = 0_u64;
+    let mut has_manifest = false;
+    let mut has_files_dir = false;
+    let mut has_useful_file = false;
+    for index in 0..archive.len() {
+        let file = archive.by_index(index).map_err(|error| error.to_string())?;
+        let Some(enclosed) = file.enclosed_name().map(|path| path.to_path_buf()) else {
+            return Err("ZIP contains an unsafe path.".to_string());
+        };
+        if enclosed.is_absolute()
+            || enclosed
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err("ZIP contains an unsafe path.".to_string());
+        }
+        total_uncompressed = total_uncompressed.saturating_add(file.size());
+        if total_uncompressed > 250 * 1024 * 1024 {
+            return Err("ZIP archive expands to more than 250 MB.".to_string());
+        }
+        let normalized = enclosed.to_string_lossy().replace('\\', "/");
+        if normalized == "template.json" && file.is_file() {
+            has_manifest = true;
+        }
+        if normalized == "files/" || normalized.starts_with("files/") {
+            has_files_dir = true;
+        }
+        if normalized.starts_with("files/") && file.is_file() {
+            has_useful_file = true;
+        }
+    }
+    if !has_manifest {
+        return Err("Template manifest is missing. Add template.json at the ZIP root.".to_string());
+    }
+    if !has_files_dir {
+        return Err("Template ZIP must contain a files/ directory.".to_string());
+    }
+    if !has_useful_file {
+        return Err("Template ZIP does not contain useful files inside files/.".to_string());
     }
     Ok(())
 }
@@ -2745,5 +2781,68 @@ mod tests {
             r#"include "C:\Users\demo\file.php";"#
         ));
         assert!(!contains_windows_path("/var/www/html/index.php"));
+    }
+
+    fn temp_zip(name: &str) -> PathBuf {
+        env::temp_dir().join(format!(
+            "local-dev-studio-test-{}-{}.zip",
+            name,
+            Uuid::new_v4().simple()
+        ))
+    }
+
+    fn write_zip(path: &Path, entries: &[(&str, &str)]) {
+        use std::io::Write;
+        let file = fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, content) in entries {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(content.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn template_zip_validation_rejects_empty_archive() {
+        let zip_path = temp_zip("empty");
+        write_zip(&zip_path, &[]);
+        let file = fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert!(validate_template_zip_archive(&mut archive).is_err());
+        fs::remove_file(zip_path).unwrap();
+    }
+
+    #[test]
+    fn template_zip_validation_rejects_zip_slip() {
+        let zip_path = temp_zip("zipslip");
+        write_zip(
+            &zip_path,
+            &[
+                ("template.json", r#"{"name":"Bad","type":"static"}"#),
+                ("files/index.html", "<h1>OK</h1>"),
+                ("../evil.txt", "evil"),
+            ],
+        );
+        let file = fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert!(validate_template_zip_archive(&mut archive).is_err());
+        fs::remove_file(zip_path).unwrap();
+    }
+
+    #[test]
+    fn template_zip_validation_accepts_manifest_and_files() {
+        let zip_path = temp_zip("valid");
+        write_zip(
+            &zip_path,
+            &[
+                ("template.json", r#"{"name":"Static","type":"static"}"#),
+                ("files/index.html", "<h1>OK</h1>"),
+            ],
+        );
+        let file = fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        validate_template_zip_archive(&mut archive).unwrap();
+        fs::remove_file(zip_path).unwrap();
     }
 }
