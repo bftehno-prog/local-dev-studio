@@ -14,6 +14,7 @@ pub fn run_migrations(db_path: &Path) -> Result<(), String> {
     )
     .map_err(|error| format!("Failed to prepare schema migrations: {}", error))?;
     apply_migration(&mut conn, 1, "001_initial_schema", initial_schema_sql())?;
+    apply_migration(&mut conn, 2, "002_trusted_projects", trusted_projects_sql())?;
     Ok(())
 }
 
@@ -99,5 +100,13 @@ fn initial_schema_sql() -> &'static str {
         pid INTEGER,
         status TEXT NOT NULL
     );
+    "
+}
+
+fn trusted_projects_sql() -> &'static str {
+    "
+    ALTER TABLE projects ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE projects ADD COLUMN trusted_at TEXT;
+    ALTER TABLE projects ADD COLUMN trusted_runtime TEXT;
     "
 }

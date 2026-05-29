@@ -18,6 +18,9 @@ export interface Project {
   command?: string;
   status: ProjectStatus;
   use_turbopack: boolean;
+  trusted: boolean;
+  trusted_at?: string;
+  trusted_runtime?: string;
   created_at: string;
   updated_at: string;
 }

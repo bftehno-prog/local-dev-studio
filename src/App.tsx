@@ -499,6 +499,7 @@ function ProjectsView({
               <th>{t('table.type')}</th>
               <th>{t('table.port')}</th>
               <th>{t('table.status')}</th>
+              <th>{t('table.trust')}</th>
               <th>{t('table.path')}</th>
               <th>{t('table.actions')}</th>
             </tr>
@@ -515,6 +516,11 @@ function ProjectsView({
                 <td>{project.port || '-'}</td>
                 <td>
                   <Status status={project.status} t={t} />
+                </td>
+                <td>
+                  <span className={`status ${project.trusted ? 'running' : 'warning'}`}>
+                    {project.trusted ? 'trusted' : 'untrusted'}
+                  </span>
                 </td>
                 <td>
                   <code>{project.path}</code>
@@ -571,6 +577,22 @@ function ProjectsView({
                     }
                   >
                     {t('action.runDoctor')}
+                  </button>
+                  <button
+                    onClick={() =>
+                      onRun(() => api.trustProject(project.id), t('message.projectTrusted'))
+                    }
+                    disabled={project.trusted}
+                  >
+                    {t('action.trustProject')}
+                  </button>
+                  <button
+                    onClick={() =>
+                      onRun(() => api.resetProjectTrust(project.id), t('message.projectTrustReset'))
+                    }
+                    disabled={!project.trusted}
+                  >
+                    {t('action.resetTrust')}
                   </button>
                   <button
                     onClick={() =>

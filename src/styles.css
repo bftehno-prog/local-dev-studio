@@ -289,7 +289,8 @@ tr.selected {
 
 .status.starting,
 .status.installing,
-.status.building {
+.status.building,
+.status.warning {
   background: rgba(161, 98, 7, 0.12);
   color: var(--warn);
 }

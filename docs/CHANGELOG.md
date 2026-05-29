@@ -18,6 +18,7 @@
 - Runtime manager commands and Settings runtime health table.
 - Dedicated Diagnostics page with copyable issue report.
 - Project Doctor command and Projects page action.
+- Trusted Project Mode with SQLite trust state and Projects page trust controls.
 
 ### Changed
 
@@ -30,6 +31,7 @@
 - CI and release workflows now run format/lint/clippy gates; tagged releases publish installers with checksums.
 - Runtime diagnostics now expose source, path, version and last checked timestamp for supported tools.
 - Projects can now run a basic doctor check for path, type, runtime, dev script and entrypoint readiness.
+- Starting untrusted projects is blocked until the user explicitly trusts the project.
 
 ### Fixed
 

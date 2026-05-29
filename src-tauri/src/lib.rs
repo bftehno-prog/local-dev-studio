@@ -43,6 +43,9 @@ struct Project {
     command: Option<String>,
     status: String,
     use_turbopack: bool,
+    trusted: bool,
+    trusted_at: Option<String>,
+    trusted_runtime: Option<String>,
     created_at: String,
     updated_at: String,
 }
@@ -229,6 +232,8 @@ pub fn run() {
             remove_project,
             start_project,
             stop_project,
+            trust_project,
+            reset_project_trust,
             start_all_projects,
             stop_all_projects,
             open_path,
@@ -729,7 +734,7 @@ fn projects_from_db(db_path: &Path) -> Result<Vec<Project>, String> {
     let conn = connect(db_path)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, path, project_type, port, command, status, use_turbopack, created_at, updated_at
+            "SELECT id, name, path, project_type, port, command, status, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at
              FROM projects ORDER BY updated_at DESC",
         )
         .map_err(|error| error.to_string())?;
@@ -760,6 +765,9 @@ fn add_project(path: String, state: State<AppState>) -> Result<Project, String> 
         command: None,
         status: "stopped".to_string(),
         use_turbopack: false,
+        trusted: false,
+        trusted_at: None,
+        trusted_runtime: None,
         created_at: timestamp.clone(),
         updated_at: timestamp,
     };
@@ -775,6 +783,41 @@ fn remove_project(id: String, state: State<AppState>) -> Result<(), String> {
     conn.execute("DELETE FROM projects WHERE id = ?1", params![id])
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+fn trust_project(id: String, state: State<AppState>) -> Result<Project, String> {
+    let mut project = get_project(&state.db_path, &id)?;
+    let settings = read_settings_at(&state.db_path)?;
+    project.trusted = true;
+    project.trusted_at = Some(now());
+    project.trusted_runtime = Some(trust_runtime_for_project(&project, &settings));
+    project.updated_at = now();
+    upsert_project(&state.db_path, &project)?;
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "warning",
+        "Project marked as trusted by user",
+    )?;
+    Ok(project)
+}
+
+#[tauri::command]
+fn reset_project_trust(id: String, state: State<AppState>) -> Result<Project, String> {
+    let mut project = get_project(&state.db_path, &id)?;
+    project.trusted = false;
+    project.trusted_at = None;
+    project.trusted_runtime = None;
+    project.updated_at = now();
+    upsert_project(&state.db_path, &project)?;
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "warning",
+        "Project trust status reset",
+    )?;
+    Ok(project)
 }
 
 #[tauri::command]
@@ -794,6 +837,12 @@ fn project_doctor(id: String, state: State<AppState>) -> Result<ProjectDoctorRep
         validate_project_type(&project.project_type).is_ok(),
         "Project type is supported.",
         "Project type is unsupported.",
+    ));
+    checks.push(doctor_check(
+        "Trusted project",
+        project.trusted,
+        "Project is trusted.",
+        "Project is not trusted yet.",
     ));
     if let Some(port) = project.port {
         checks.push(doctor_check(
@@ -960,6 +1009,13 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
     validate_project_path(Path::new(&project.path))?;
     validate_project_type(&project.project_type)?;
     let settings = read_settings_at(&state.db_path)?;
+    let trust_runtime = trust_runtime_for_project(&project, &settings);
+    if !project.trusted {
+        return Err(format!(
+            "Project is not trusted yet. Detected command runtime: {}. Use Trust Project before starting local scripts.",
+            trust_runtime
+        ));
+    }
     let port = match project.port {
         Some(port) if is_port_free(port) => port,
         Some(port) => {
@@ -1875,7 +1931,7 @@ fn stream_child_logs(
 fn get_project(db_path: &Path, id: &str) -> Result<Project, String> {
     connect(db_path)?
         .query_row(
-            "SELECT id, name, path, project_type, port, command, status, use_turbopack, created_at, updated_at FROM projects WHERE id = ?1",
+            "SELECT id, name, path, project_type, port, command, status, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at FROM projects WHERE id = ?1",
             params![id],
             project_from_row,
         )
@@ -1892,16 +1948,19 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         command: row.get(5)?,
         status: row.get(6)?,
         use_turbopack: row.get::<_, i64>(7)? == 1,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        trusted: row.get::<_, i64>(8)? == 1,
+        trusted_at: row.get(9)?,
+        trusted_runtime: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }
 
 fn upsert_project(db_path: &Path, project: &Project) -> Result<(), String> {
     connect(db_path)?
         .execute(
-            "INSERT OR REPLACE INTO projects (id, name, path, project_type, port, command, status, use_turbopack, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT OR REPLACE INTO projects (id, name, path, project_type, port, command, status, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 project.id,
                 project.name,
@@ -1911,12 +1970,24 @@ fn upsert_project(db_path: &Path, project: &Project) -> Result<(), String> {
                 project.command,
                 project.status,
                 if project.use_turbopack { 1 } else { 0 },
+                if project.trusted { 1 } else { 0 },
+                project.trusted_at,
+                project.trusted_runtime,
                 project.created_at,
                 project.updated_at
             ],
         )
         .map(|_| ())
         .map_err(|error| error.to_string())
+}
+
+fn trust_runtime_for_project(project: &Project, settings: &Settings) -> String {
+    match project.project_type.as_str() {
+        "next" | "vite" | "astro" => package_manager(settings),
+        "php" => "php".to_string(),
+        "static" => "node".to_string(),
+        _ => "unknown".to_string(),
+    }
 }
 
 fn insert_log(
@@ -2489,5 +2560,28 @@ mod tests {
         assert!(package_json_has_script(&package_json, "dev"));
         assert!(!package_json_has_script(&package_json, "preview"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn trust_runtime_for_project_uses_project_type() {
+        let mut project = Project {
+            id: "p1".to_string(),
+            name: "Project".to_string(),
+            path: "C:\\Projects\\demo".to_string(),
+            project_type: "php".to_string(),
+            port: None,
+            command: None,
+            status: "stopped".to_string(),
+            use_turbopack: false,
+            trusted: false,
+            trusted_at: None,
+            trusted_runtime: None,
+            created_at: now(),
+            updated_at: now(),
+        };
+        let settings = default_settings();
+        assert_eq!(trust_runtime_for_project(&project, &settings), "php");
+        project.project_type = "static".to_string();
+        assert_eq!(trust_runtime_for_project(&project, &settings), "node");
     }
 }

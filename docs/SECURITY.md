@@ -4,6 +4,10 @@
 
 Local Dev Studio does not execute arbitrary commands from the UI. Commands are built from allow-listed project types and package managers.
 
+## Trusted Project Mode
+
+Projects start as untrusted. Before a project can run local scripts, the user must mark it as trusted from the Projects page. The trust decision is stored in SQLite with the trusted timestamp and runtime family, and every trust/reset action is written to logs.
+
 Allowed project types:
 
 - `next`
