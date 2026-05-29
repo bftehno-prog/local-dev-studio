@@ -1,11 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Code2,
-  Copy,
   Database,
   Folder,
-  Globe2,
-  Link,
   ListRestart,
   Play,
   Plus,
@@ -16,14 +13,14 @@ import {
   Upload
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { QRCodeSVG } from "qrcode.react";
-import { devices, sections, type SectionId } from "./app/routes";
-import { api } from "./lib/api";
+import { sections, type SectionId } from "./app/routes";
+import type { TFunction } from "./app/types";
+import { PreviewPanel } from "./features/preview/PreviewPanel";
 import { emptySettings } from "./lib/constants";
-import { translate, type Language, type TranslationKey } from "./lib/i18n";
+import { translate, type Language } from "./lib/i18n";
 import type { DashboardData, DiagnosticItem, LogEntry, PortInfo, Project, ServerProcess, Settings, TemplateInfo } from "./lib/types";
-
-type TFunction = (key: TranslationKey) => string;
+import { api } from "./shared/api/commands";
+import { Info, LogList, Metric, PortList, runtimeText, ServerTable, Status, templateName, versionText } from "./shared/ui/DataViews";
 
 export default function App() {
   const [active, setActive] = useState<SectionId>("dashboard");
@@ -124,7 +121,7 @@ export default function App() {
       setPreviewUrl(activeServer?.url ?? "");
       setActivePreviewServerId(activeServer?.project_id ?? "");
     }
-  }, [selectedProject, servers]);
+  }, [activePreviewServerId, manualPreviewUrl, selectedProject, servers]);
 
   function showError(error: unknown) {
     setMessage(error instanceof Error ? error.message : String(error));
@@ -252,108 +249,35 @@ export default function App() {
         {active === "settings" && <SettingsView settings={settings} onChange={updateSettings} onSave={saveSettings} diagnostics={diagnostics} onRefreshDiagnostics={refreshDiagnostics} t={t} language={language} />}
       </section>
 
-      <aside className="preview">
-        <div className="preview-header">
-          <div>
-            <strong>{t("preview.title")}</strong>
-            <span>{localPreviewUrl || t("preview.noServer")}</span>
-          </div>
-          <div className="preview-actions">
-            <button disabled={!localPreviewUrl} title={t("preview.reload")} onClick={() => setPreviewKey((value) => value + 1)}>
-              <RefreshCcw size={16} />
-            </button>
-            <button disabled={!localPreviewUrl} title={t("preview.copyUrl")} onClick={() => localPreviewUrl && navigator.clipboard.writeText(localPreviewUrl).catch(showError)}>
-              <Copy size={16} />
-            </button>
-            <button disabled={!localPreviewUrl} title={t("preview.openBrowser")} onClick={() => localPreviewUrl && void api.openExternal(localPreviewUrl).catch(showError)}>
-              <Globe2 size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="preview-controls">
-          <select
-            value={activePreviewServerId}
-            onChange={(event) => {
-              const server = servers.find((item) => item.project_id === event.target.value);
-              setActivePreviewServerId(event.target.value);
-              setManualPreviewUrl("");
-              setPreviewUrl(server?.url ?? "");
-              setPreviewKey((value) => value + 1);
-            }}
-          >
-            <option value="">{t("preview.selectServer")}</option>
-            {servers.map((server) => (
-              <option key={server.project_id} value={server.project_id}>
-                {server.project_name} :{server.port}
-              </option>
-            ))}
-          </select>
-          <div className="url-row">
-            <Link size={15} />
-            <input
-              value={manualPreviewUrl || previewUrl}
-              onChange={(event) => {
-                setManualPreviewUrl(event.target.value);
-                setPreviewUrl(event.target.value);
-              }}
-              placeholder="http://localhost:3000"
-            />
-          </div>
-        </div>
-        <div className="device-tabs">
-          {devices.map(([name]) => (
-            <button key={name} className={device === name ? "active" : ""} onClick={() => setDevice(name)}>
-              {t(`device.${name}` as TranslationKey)}
-            </button>
-          ))}
-          <button className={fitPreview ? "active" : ""} onClick={() => setFitPreview((value) => !value)}>
-            {fitPreview ? t("preview.fit") : t("preview.actual")}
-          </button>
-        </div>
-        <div className="preview-frame-shell">
-          {localPreviewUrl ? (
-            <div className="preview-frame-scale" style={{ width: previewWidth, transform: `scale(${previewScale})` }}>
-              {previewLoading && <div className="preview-state">{t("preview.loading")}</div>}
-              {previewError && <div className="preview-state error">{previewError}</div>}
-              <iframe
-                key={`${localPreviewUrl}-${device}-${previewKey}`}
-                title={t("preview.iframeTitle")}
-                src={localPreviewUrl}
-                onLoad={() => {
-                  setPreviewLoading(false);
-                  setPreviewError("");
-                }}
-                onError={() => {
-                  setPreviewLoading(false);
-                  setPreviewError(t("preview.unavailable"));
-                }}
-              />
-            </div>
-          ) : (
-            <div className="empty-preview">
-              <p>{t("preview.placeholder")}</p>
-              {selectedProject && <button onClick={() => void run(() => api.startProject(selectedProject.id), t("message.projectStarted"))}><Play size={16} /> {t("action.start")}</button>}
-            </div>
-          )}
-        </div>
-        {localPreviewUrl && (
-          <div className="qr-row">
-            <QRCodeSVG value={networkPreviewUrl} size={88} />
-            <div>
-              <span>{t("preview.local")}</span>
-              <code>{localPreviewUrl}</code>
-              <span>{t("preview.network")}</span>
-              <code>{networkPreviewUrl}</code>
-              {activePreviewServer && (
-                <>
-                  <span>{t("preview.health")}</span>
-                  <code>{activePreviewServer.status}</code>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-      </aside>
+      <PreviewPanel
+        t={t}
+        settings={settings}
+        servers={servers}
+        selectedProject={selectedProject}
+        activePreviewServerId={activePreviewServerId}
+        setActivePreviewServerId={setActivePreviewServerId}
+        previewUrl={previewUrl}
+        setPreviewUrl={setPreviewUrl}
+        manualPreviewUrl={manualPreviewUrl}
+        setManualPreviewUrl={setManualPreviewUrl}
+        previewKey={previewKey}
+        setPreviewKey={setPreviewKey}
+        fitPreview={fitPreview}
+        setFitPreview={setFitPreview}
+        previewLoading={previewLoading}
+        setPreviewLoading={setPreviewLoading}
+        previewError={previewError}
+        setPreviewError={setPreviewError}
+        device={device}
+        setDevice={setDevice}
+        previewWidth={previewWidth}
+        previewScale={previewScale}
+        localPreviewUrl={localPreviewUrl}
+        networkPreviewUrl={networkPreviewUrl}
+        activePreviewServer={activePreviewServer}
+        showError={showError}
+        run={run}
+      />
     </main>
   );
 }
@@ -740,52 +664,8 @@ function SettingsView({
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
-}
-
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return <section className="panel"><h2>{title}</h2>{children}</section>;
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return <div className="info-row"><span>{label}</span><code>{value}</code></div>;
-}
-
-function Status({ status, t }: { status: string; t: TFunction }) {
-  return <span className={`status ${status}`}>{t(`status.${status}` as TranslationKey)}</span>;
-}
-
-function ServerTable({ servers, compact = false, t }: { servers: ServerProcess[]; compact?: boolean; t: TFunction }) {
-  if (!servers.length) return <p className="muted">{t("empty.noServers")}</p>;
-  return (
-    <table>
-      <thead><tr><th>{t("table.project")}</th><th>{t("table.type")}</th><th>{t("table.pid")}</th><th>{t("table.port")}</th>{!compact && <th>{t("table.url")}</th>}<th>{t("table.status")}</th>{!compact && <th>{t("table.memory")}</th>}</tr></thead>
-      <tbody>
-        {servers.map((server) => (
-          <tr key={`${server.project_id}-${server.pid}`}>
-            <td>{server.project_name}</td>
-            <td>{server.project_type}</td>
-            <td>{server.pid}</td>
-            <td>{server.port}</td>
-            {!compact && <td><code>{server.url}</code></td>}
-            <td><Status status={server.status} t={t} /></td>
-            {!compact && <td>{server.memory_usage_mb?.toFixed(1) || "-"} MB</td>}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function PortList({ ports, t }: { ports: PortInfo[]; t: TFunction }) {
-  if (!ports.length) return <p className="muted">{t("empty.noPorts")}</p>;
-  return <div className="port-list">{ports.map((port) => <span key={port.port}>{port.port}{port.external ? ` ${t("ports.external")}` : ""}</span>)}</div>;
-}
-
-function LogList({ logs, t }: { logs: LogEntry[]; t: TFunction }) {
-  if (!logs.length) return <p className="muted">{t("empty.noLogs")}</p>;
-  return <div className="logs">{logs.map((log) => <div className={`log ${log.level}`} key={log.id}><span>{log.created_at}</span><strong>{log.level}</strong><p>{log.message}</p></div>)}</div>;
 }
 
 function Field({ label, value, onChange, disabled = false }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
@@ -798,31 +678,4 @@ function NumberField({ label, value, onChange }: { label: string; value: number;
 
 function Toggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
   return <label className="toggle"><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /> <span>{label}</span></label>;
-}
-
-function templateName(template: TemplateInfo, t: TFunction) {
-  if (!template.built_in) {
-    return template.name;
-  }
-  return t(`template.${template.id}` as TranslationKey);
-}
-
-function versionText(value: string | undefined, t: TFunction) {
-  if (!value || value === "Not found") {
-    return t("empty.notFound");
-  }
-  return value;
-}
-
-function runtimeText(value: string | undefined, t: TFunction) {
-  if (!value) {
-    return t("empty.checking");
-  }
-  if (value === "Ready") {
-    return "OK";
-  }
-  if (value === "Node.js not found") {
-    return t("empty.notFound");
-  }
-  return value;
 }

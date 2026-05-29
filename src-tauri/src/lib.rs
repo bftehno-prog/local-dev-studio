@@ -2,13 +2,11 @@ use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashMap,
     env,
     fs,
     io::{BufRead, BufReader},
-    net::{IpAddr, TcpListener},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
@@ -22,16 +20,17 @@ use tauri::{
 use uuid::Uuid;
 
 mod db;
+mod security;
+mod state;
+mod utils;
 
-#[derive(Default)]
-struct ManagedProcesses {
-    children: HashMap<String, Child>,
-}
-
-struct AppState {
-    db_path: PathBuf,
-    processes: Arc<Mutex<ManagedProcesses>>,
-}
+use security::validation::{validate_package_manager, validate_project_path, validate_project_type};
+use state::{AppState, ManagedProcesses};
+use utils::{
+    network::{find_free_port, is_port_free, network_url as build_network_url},
+    paths::default_data_dir,
+    time::now,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Project {
@@ -214,12 +213,6 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Local Dev Studio");
-}
-
-fn default_data_dir() -> PathBuf {
-    dirs::data_dir()
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
-        .join("LocalDevStudio")
 }
 
 fn connect(db_path: &Path) -> Result<Connection, String> {
@@ -853,32 +846,7 @@ fn list_servers(state: State<AppState>) -> Result<Vec<ServerProcess>, String> {
 
 #[tauri::command]
 fn network_url(port: u16) -> Result<String, String> {
-    Ok(format!("http://{}:{}", local_ip_address(), port))
-}
-
-fn local_ip_address() -> String {
-    if cfg!(windows) {
-        local_ip_from_ipconfig().unwrap_or_else(|| "127.0.0.1".to_string())
-    } else {
-        "127.0.0.1".to_string()
-    }
-}
-
-fn local_ip_from_ipconfig() -> Option<String> {
-    let output = Command::new("ipconfig").output().ok()?;
-    let text = String::from_utf8_lossy(&output.stdout);
-    for line in text.lines() {
-        if !line.contains("IPv4") {
-            continue;
-        }
-        let candidate = line.split(':').nth(1)?.trim();
-        if let Ok(IpAddr::V4(ip)) = candidate.parse::<IpAddr>() {
-            if !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() {
-                return Some(ip.to_string());
-            }
-        }
-    }
-    None
+    Ok(build_network_url(port))
 }
 
 #[tauri::command]
@@ -999,6 +967,7 @@ fn save_settings(settings: Settings, state: State<AppState>) -> Result<Settings,
     if settings.port_start > settings.port_end {
         return Err("Default port range is invalid: start must be lower than end.".to_string());
     }
+    validate_package_manager(&settings.package_manager)?;
     fs::create_dir_all(&settings.projects_folder).map_err(|error| format!("Cannot create projects folder: {}", error))?;
     fs::create_dir_all(&settings.sandboxes_folder).map_err(|error| format!("Cannot create sandboxes folder: {}", error))?;
     let value = serde_json::to_string(&settings).map_err(|error| error.to_string())?;
@@ -1335,19 +1304,6 @@ fn version_for(program: String, args: &[&str]) -> String {
         .unwrap_or_else(|| "Not found".to_string())
 }
 
-fn is_port_free(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
-}
-
-fn find_free_port(start: u16, end: u16) -> Result<u16, String> {
-    for port in start..=end {
-        if is_port_free(port) {
-            return Ok(port);
-        }
-    }
-    Err(format!("No free port found in range {}-{}.", start, end))
-}
-
 fn friendly_spawn_error(project: &Project, command: &str, error: std::io::Error) -> String {
     match project.project_type.as_str() {
         "next" => format!("Не удалось запустить Next.js проект. Проверь, установлен ли pnpm, существует ли package.json в корне проекта, и доступна ли команда: {}. Детали: {}", command, error),
@@ -1436,39 +1392,8 @@ fn ensure_file(path: PathBuf, message: &str) -> Result<(), String> {
     }
 }
 
-fn validate_project_path(path: &Path) -> Result<(), String> {
-    if path.as_os_str().is_empty() {
-        return Err("Project path is empty.".to_string());
-    }
-    let raw = path.to_string_lossy();
-    if raw.contains('\0') {
-        return Err("Project path contains invalid characters.".to_string());
-    }
-    if !path.exists() {
-        return Err("Project folder does not exist. Check the path and try again.".to_string());
-    }
-    if !path.is_dir() {
-        return Err("Selected path is not a folder.".to_string());
-    }
-    path.canonicalize()
-        .map_err(|error| format!("Cannot resolve project path: {}", error))?;
-    Ok(())
-}
-
-fn validate_project_type(project_type: &str) -> Result<(), String> {
-    if matches!(project_type, "next" | "vite" | "astro" | "php" | "static") {
-        Ok(())
-    } else {
-        Err("Unsupported project type. Supported types: next, vite, astro, php, static.".to_string())
-    }
-}
-
 fn user_error(error: &str) -> String {
     error.lines().next().unwrap_or(error).to_string()
-}
-
-fn now() -> String {
-    Utc::now().to_rfc3339()
 }
 
 fn package_manager(settings: &Settings) -> String {
@@ -1742,6 +1667,7 @@ fn extract_zip(source: &Path, target: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::TcpListener;
 
     fn temp_project(name: &str) -> PathBuf {
         let root = env::temp_dir().join(format!("local-dev-studio-test-{}-{}", name, Uuid::new_v4().simple()));

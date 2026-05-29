@@ -4,6 +4,7 @@
 
 ```bash
 pnpm typecheck
+pnpm lint
 pnpm test
 pnpm build
 pnpm tauri dev
@@ -21,9 +22,12 @@ cargo test
 ## Structure
 
 - `src/` contains React UI.
-- `src/lib/` contains API, types, i18n and constants.
+- `src/app/` contains app-level routing and shared app types.
+- `src/features/` contains larger feature panels split out of the app shell.
+- `src/shared/` contains shared API adapters, hooks and cross-feature UI helpers.
+- `src/lib/` contains legacy API, types, i18n and constants.
 - `src/components/ui/` contains shared UI primitives.
-- `src-tauri/src/` contains Rust commands, migrations and process logic.
+- `src-tauri/src/` contains Rust commands, state, security validation, utilities, migrations and process logic.
 - `docs/` contains Markdown docs.
 - `docs-site/` contains static HTML documentation.
 
@@ -31,6 +35,6 @@ cargo test
 
 1. Add the Rust function with `#[tauri::command]`.
 2. Register it in `tauri::generate_handler!`.
-3. Add the TypeScript wrapper in `src/lib/api.ts`.
+3. Add the TypeScript wrapper in `src/lib/api.ts` and re-export through `src/shared/api/commands.ts` when needed.
 4. Add types in `src/lib/types.ts`.
 5. Add tests where practical.
