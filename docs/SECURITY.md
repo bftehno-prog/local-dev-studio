@@ -21,15 +21,15 @@ Allowed package managers:
 
 ## Project Paths
 
-Project paths must exist, be directories and resolve through canonicalization.
+Project paths must exist, be directories and resolve through canonicalization. The app rejects path traversal and Windows system/user root folders such as `C:\`, `C:\Windows`, `C:\Program Files`, `C:\Users`, the current user profile root and AppData.
 
 ## ZIP Import
 
-ZIP imports require `.zip` files. Extraction uses enclosed path checks so archive entries cannot escape the target directory.
+ZIP imports require `.zip` files with `template.json` and a `files/` directory. Extraction uses enclosed path checks so archive entries cannot escape the target directory. The importer also enforces archive size, file count, uncompressed size, project type and package manager allow-lists.
 
 ## Environment Variables
 
-Environment variables must use `KEY=value`. Values are passed to child processes, but logs include only variable names.
+Environment variables must use `KEY=value`. Keys must use uppercase letters, numbers and underscores and cannot start with a number. Values are passed to child processes, but logs include only variable names.
 
 ## CSP
 

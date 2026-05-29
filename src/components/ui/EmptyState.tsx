@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react';
 
 export function EmptyState({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (

@@ -12,6 +12,7 @@
 - SQLite schema migrations.
 - Markdown and HTML documentation.
 - ESLint configuration and `pnpm lint`.
+- Prettier configuration and `pnpm format:check`.
 - Frontend shared API, hooks, preview and reusable data-view modules.
 - Rust `state`, `security` and `utils` modules.
 
@@ -22,7 +23,10 @@
 - README now includes production readiness details.
 - `App.tsx` and `src-tauri/src/lib.rs` are smaller after incremental module extraction.
 - Package manager settings are validated against an allow-list before saving.
+- Settings are grouped into tabs without changing the visual language.
+- CI and release workflows now run format/lint/clippy gates; tagged releases publish installers with checksums.
 
 ### Fixed
 
 - Project startup remains non-blocking while status is monitored in the background.
+- Process log streaming avoids the clippy `Lines::flatten()` pitfall.

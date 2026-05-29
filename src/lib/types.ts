@@ -1,13 +1,13 @@
-export type ProjectType = "next" | "vite" | "astro" | "static" | "php" | "unknown";
+export type ProjectType = 'next' | 'vite' | 'astro' | 'static' | 'php' | 'unknown';
 export type ProjectStatus =
-  | "idle"
-  | "starting"
-  | "running"
-  | "stopping"
-  | "stopped"
-  | "error"
-  | "installing"
-  | "building";
+  | 'idle'
+  | 'starting'
+  | 'running'
+  | 'stopping'
+  | 'stopped'
+  | 'error'
+  | 'installing'
+  | 'building';
 
 export interface Project {
   id: string;
@@ -42,7 +42,7 @@ export interface LogEntry {
   id: number;
   project_id?: string;
   project_name?: string;
-  level: "info" | "warning" | "error" | "build" | "server";
+  level: 'info' | 'warning' | 'error' | 'build' | 'server';
   message: string;
   created_at: string;
 }
@@ -57,7 +57,7 @@ export interface PortInfo {
 }
 
 export interface Settings {
-  language: "en" | "ru";
+  language: 'en' | 'ru';
   projects_folder: string;
   sandboxes_folder: string;
   package_manager: string;
@@ -119,7 +119,7 @@ export interface TemplateInfo {
 
 export interface DiagnosticItem {
   name: string;
-  status: "OK" | "Missing" | "Warning" | "Error";
+  status: 'OK' | 'Missing' | 'Warning' | 'Error';
   version: string;
   path: string;
   error: string;

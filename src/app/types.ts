@@ -1,3 +1,3 @@
-import type { TranslationKey } from "../lib/i18n";
+import type { TranslationKey } from '../lib/i18n';
 
 export type TFunction = (key: TranslationKey) => string;

@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState } from 'react';
 
 export function useAsyncAction() {
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState('');
 
   const showError = useCallback((error: unknown) => {
     setMessage(error instanceof Error ? error.message : String(error));
@@ -10,7 +10,7 @@ export function useAsyncAction() {
   const run = useCallback(
     async (action: () => Promise<unknown>, success: string, after?: () => Promise<unknown>) => {
       try {
-        setMessage("");
+        setMessage('');
         await action();
         setMessage(success);
         await after?.();
@@ -18,7 +18,7 @@ export function useAsyncAction() {
         showError(error);
       }
     },
-    [showError]
+    [showError],
   );
 
   return { message, setMessage, showError, run };

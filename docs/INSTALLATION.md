@@ -27,8 +27,8 @@ If Tauri cannot find Rust, install Rust stable from rustup and restart the termi
 
 ## Common Installation Errors
 
-| Error | Fix |
-| --- | --- |
-| `pnpm not found` | Enable Corepack or install pnpm globally. |
+| Error             | Fix                                       |
+| ----------------- | ----------------------------------------- |
+| `pnpm not found`  | Enable Corepack or install pnpm globally. |
 | `cargo not found` | Install Rust stable and reopen the shell. |
-| WebView missing | Install Microsoft Edge WebView2 Runtime. |
+| WebView missing   | Install Microsoft Edge WebView2 Runtime.  |

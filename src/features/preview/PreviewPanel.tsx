@@ -1,10 +1,10 @@
-import { Copy, Globe2, Link, Play, RefreshCcw } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
-import { devices } from "../../app/routes";
-import type { TFunction } from "../../app/types";
-import { api } from "../../shared/api/commands";
-import type { Project, ServerProcess, Settings } from "../../lib/types";
-import type { TranslationKey } from "../../lib/i18n";
+import { Copy, Globe2, Link, Play, RefreshCcw } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
+import { devices } from '../../app/routes';
+import type { TFunction } from '../../app/types';
+import { api } from '../../shared/api/commands';
+import type { Project, ServerProcess, Settings } from '../../lib/types';
+import type { TranslationKey } from '../../lib/i18n';
 
 type PreviewPanelProps = {
   t: TFunction;
@@ -62,23 +62,39 @@ export function PreviewPanel({
   networkPreviewUrl,
   activePreviewServer,
   showError,
-  run
+  run,
 }: PreviewPanelProps) {
   return (
     <aside className="preview">
       <div className="preview-header">
         <div>
-          <strong>{t("preview.title")}</strong>
-          <span>{localPreviewUrl || t("preview.noServer")}</span>
+          <strong>{t('preview.title')}</strong>
+          <span>{localPreviewUrl || t('preview.noServer')}</span>
         </div>
         <div className="preview-actions">
-          <button disabled={!localPreviewUrl} title={t("preview.reload")} onClick={() => setPreviewKey((value) => value + 1)}>
+          <button
+            disabled={!localPreviewUrl}
+            title={t('preview.reload')}
+            onClick={() => setPreviewKey((value) => value + 1)}
+          >
             <RefreshCcw size={16} />
           </button>
-          <button disabled={!localPreviewUrl} title={t("preview.copyUrl")} onClick={() => localPreviewUrl && navigator.clipboard.writeText(localPreviewUrl).catch(showError)}>
+          <button
+            disabled={!localPreviewUrl}
+            title={t('preview.copyUrl')}
+            onClick={() =>
+              localPreviewUrl && navigator.clipboard.writeText(localPreviewUrl).catch(showError)
+            }
+          >
             <Copy size={16} />
           </button>
-          <button disabled={!localPreviewUrl} title={t("preview.openBrowser")} onClick={() => localPreviewUrl && void api.openExternal(localPreviewUrl).catch(showError)}>
+          <button
+            disabled={!localPreviewUrl}
+            title={t('preview.openBrowser')}
+            onClick={() =>
+              localPreviewUrl && void api.openExternal(localPreviewUrl).catch(showError)
+            }
+          >
             <Globe2 size={16} />
           </button>
         </div>
@@ -89,12 +105,12 @@ export function PreviewPanel({
           onChange={(event) => {
             const server = servers.find((item) => item.project_id === event.target.value);
             setActivePreviewServerId(event.target.value);
-            setManualPreviewUrl("");
-            setPreviewUrl(server?.url ?? "");
+            setManualPreviewUrl('');
+            setPreviewUrl(server?.url ?? '');
             setPreviewKey((value) => value + 1);
           }}
         >
-          <option value="">{t("preview.selectServer")}</option>
+          <option value="">{t('preview.selectServer')}</option>
           {servers.map((server) => (
             <option key={server.project_id} value={server.project_id}>
               {server.project_name} :{server.port}
@@ -115,37 +131,55 @@ export function PreviewPanel({
       </div>
       <div className="device-tabs">
         {devices.map(([name]) => (
-          <button key={name} className={device === name ? "active" : ""} onClick={() => setDevice(name)}>
+          <button
+            key={name}
+            className={device === name ? 'active' : ''}
+            onClick={() => setDevice(name)}
+          >
             {t(`device.${name}` as TranslationKey)}
           </button>
         ))}
-        <button className={fitPreview ? "active" : ""} onClick={() => setFitPreview((value) => !value)}>
-          {fitPreview ? t("preview.fit") : t("preview.actual")}
+        <button
+          className={fitPreview ? 'active' : ''}
+          onClick={() => setFitPreview((value) => !value)}
+        >
+          {fitPreview ? t('preview.fit') : t('preview.actual')}
         </button>
       </div>
       <div className="preview-frame-shell">
         {localPreviewUrl ? (
-          <div className="preview-frame-scale" style={{ width: previewWidth, transform: `scale(${previewScale})` }}>
-            {previewLoading && <div className="preview-state">{t("preview.loading")}</div>}
+          <div
+            className="preview-frame-scale"
+            style={{ width: previewWidth, transform: `scale(${previewScale})` }}
+          >
+            {previewLoading && <div className="preview-state">{t('preview.loading')}</div>}
             {previewError && <div className="preview-state error">{previewError}</div>}
             <iframe
               key={`${localPreviewUrl}-${device}-${previewKey}`}
-              title={t("preview.iframeTitle")}
+              title={t('preview.iframeTitle')}
               src={localPreviewUrl}
               onLoad={() => {
                 setPreviewLoading(false);
-                setPreviewError("");
+                setPreviewError('');
               }}
               onError={() => {
                 setPreviewLoading(false);
-                setPreviewError(t("preview.unavailable"));
+                setPreviewError(t('preview.unavailable'));
               }}
             />
           </div>
         ) : (
           <div className="empty-preview">
-            <p>{t("preview.placeholder")}</p>
-            {selectedProject && <button onClick={() => void run(() => api.startProject(selectedProject.id), t("message.projectStarted"))}><Play size={16} /> {t("action.start")}</button>}
+            <p>{t('preview.placeholder')}</p>
+            {selectedProject && (
+              <button
+                onClick={() =>
+                  void run(() => api.startProject(selectedProject.id), t('message.projectStarted'))
+                }
+              >
+                <Play size={16} /> {t('action.start')}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -153,13 +187,13 @@ export function PreviewPanel({
         <div className="qr-row">
           <QRCodeSVG value={networkPreviewUrl} size={88} />
           <div>
-            <span>{t("preview.local")}</span>
+            <span>{t('preview.local')}</span>
             <code>{localPreviewUrl}</code>
-            <span>{t("preview.network")}</span>
+            <span>{t('preview.network')}</span>
             <code>{networkPreviewUrl}</code>
             {activePreviewServer && (
               <>
-                <span>{t("preview.health")}</span>
+                <span>{t('preview.health')}</span>
                 <code>{activePreviewServer.status}</code>
               </>
             )}

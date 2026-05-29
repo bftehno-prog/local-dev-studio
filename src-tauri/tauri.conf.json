@@ -42,12 +42,7 @@
         "language": "en-US"
       }
     },
-    "icon": [
-      "icons/icon.ico",
-      "icons/icon.png"
-    ],
-    "resources": [
-      "binaries/*"
-    ]
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "resources": ["binaries/*"]
   }
 }

@@ -2,19 +2,19 @@
 
 ## Highlights
 
-- 
+-
 
 ## Added
 
-- 
+-
 
 ## Changed
 
-- 
+-
 
 ## Fixed
 
-- 
+-
 
 ## Verification
 

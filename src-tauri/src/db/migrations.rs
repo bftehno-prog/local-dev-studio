@@ -17,15 +17,26 @@ pub fn run_migrations(db_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn apply_migration(conn: &mut Connection, version: i64, name: &str, sql: &str) -> Result<(), String> {
+fn apply_migration(
+    conn: &mut Connection,
+    version: i64,
+    name: &str,
+    sql: &str,
+) -> Result<(), String> {
     let exists: Option<i64> = conn
-        .query_row("SELECT version FROM schema_migrations WHERE version = ?1", params![version], |row| row.get(0))
+        .query_row(
+            "SELECT version FROM schema_migrations WHERE version = ?1",
+            params![version],
+            |row| row.get(0),
+        )
         .optional()
         .map_err(|error| error.to_string())?;
     if exists.is_some() {
         return Ok(());
     }
-    let tx = conn.transaction().map_err(|error| format!("Failed to start migration {}: {}", name, error))?;
+    let tx = conn
+        .transaction()
+        .map_err(|error| format!("Failed to start migration {}: {}", name, error))?;
     tx.execute_batch(sql)
         .map_err(|error| format!("Failed to apply migration {}: {}", name, error))?;
     tx.execute(
@@ -33,7 +44,8 @@ fn apply_migration(conn: &mut Connection, version: i64, name: &str, sql: &str) -
         params![version, name, Utc::now().to_rfc3339()],
     )
     .map_err(|error| format!("Failed to record migration {}: {}", name, error))?;
-    tx.commit().map_err(|error| format!("Failed to commit migration {}: {}", name, error))?;
+    tx.commit()
+        .map_err(|error| format!("Failed to commit migration {}: {}", name, error))?;
     Ok(())
 }
 

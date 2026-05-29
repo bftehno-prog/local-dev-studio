@@ -5,6 +5,7 @@
 ```bash
 pnpm typecheck
 pnpm lint
+pnpm format:check
 pnpm test
 pnpm build
 pnpm tauri dev
@@ -16,6 +17,8 @@ Rust checks:
 ```bash
 cd src-tauri
 cargo check
+cargo fmt --check
+cargo clippy -- -D warnings
 cargo test
 ```
 

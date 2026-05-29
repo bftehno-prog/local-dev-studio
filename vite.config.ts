@@ -1,21 +1,21 @@
-import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
   test: {
-    environment: "jsdom",
-    setupFiles: "./src/test/setup.ts"
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
   },
   clearScreen: false,
   server: {
     port: 1420,
-    strictPort: true
+    strictPort: true,
   },
-  envPrefix: ["VITE_", "TAURI_"],
+  envPrefix: ['VITE_', 'TAURI_'],
   build: {
-    target: process.env.TAURI_PLATFORM === "windows" ? "chrome105" : "safari13",
+    target: process.env.TAURI_PLATFORM === 'windows' ? 'chrome105' : 'safari13',
     minify: !process.env.TAURI_DEBUG,
-    sourcemap: Boolean(process.env.TAURI_DEBUG)
-  }
+    sourcemap: Boolean(process.env.TAURI_DEBUG),
+  },
 });

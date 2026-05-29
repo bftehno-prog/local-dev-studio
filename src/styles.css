@@ -10,7 +10,7 @@
   --ok: #12805c;
   --warn: #a16207;
   --err: #b42318;
-  font-family: "Segoe UI", Arial, sans-serif;
+  font-family: 'Segoe UI', Arial, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -74,7 +74,7 @@ select {
 }
 
 code {
-  font-family: Consolas, "Courier New", monospace;
+  font-family: Consolas, 'Courier New', monospace;
   font-size: 12px;
 }
 
@@ -445,6 +445,22 @@ tr.selected {
 }
 
 .device-tabs .active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-tabs button {
+  min-height: 32px;
+  font-size: 12px;
+}
+
+.settings-tabs .active {
   border-color: var(--accent);
   color: var(--accent);
 }
