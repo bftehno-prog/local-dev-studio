@@ -124,3 +124,13 @@ export interface DiagnosticItem {
   path: string;
   error: string;
 }
+
+export interface RuntimeInfo {
+  name: string;
+  found: boolean;
+  version?: string;
+  path?: string;
+  source: 'bundled' | 'system' | 'custom';
+  last_checked_at: string;
+  error?: string;
+}

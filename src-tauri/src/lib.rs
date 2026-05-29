@@ -175,6 +175,17 @@ struct DiagnosticItem {
     error: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct RuntimeInfo {
+    name: String,
+    found: bool,
+    version: Option<String>,
+    path: Option<String>,
+    source: String,
+    last_checked_at: String,
+    error: Option<String>,
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -227,6 +238,8 @@ pub fn run() {
             import_template_zip,
             export_template_zip,
             detect_project_type,
+            check_runtime,
+            check_all_runtimes,
             diagnostics
         ])
         .run(tauri::generate_context!())
@@ -569,6 +582,78 @@ fn diagnostics(state: State<AppState>) -> Result<Vec<DiagnosticItem>, String> {
         data_parent,
     ));
     Ok(items)
+}
+
+#[tauri::command]
+fn check_runtime(name: String, state: State<AppState>) -> Result<RuntimeInfo, String> {
+    let settings = get_settings(state)?;
+    runtime_info(&name, &settings)
+}
+
+#[tauri::command]
+fn check_all_runtimes(state: State<AppState>) -> Result<Vec<RuntimeInfo>, String> {
+    let settings = get_settings(state)?;
+    ["node", "npm", "pnpm", "yarn", "bun", "php", "git"]
+        .into_iter()
+        .map(|name| runtime_info(name, &settings))
+        .collect()
+}
+
+fn runtime_info(name: &str, settings: &Settings) -> Result<RuntimeInfo, String> {
+    let args = runtime_version_args(name)?;
+    let program = resolve_runtime(name, settings);
+    let source = runtime_source(name, settings, &program);
+    match Command::new(&program).args(args).output() {
+        Ok(output) if output.status.success() => Ok(RuntimeInfo {
+            name: name.to_string(),
+            found: true,
+            version: Some(
+                String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("Ready")
+                    .to_string(),
+            ),
+            path: Some(program),
+            source,
+            last_checked_at: now(),
+            error: None,
+        }),
+        Ok(output) => Ok(RuntimeInfo {
+            name: name.to_string(),
+            found: false,
+            version: None,
+            path: Some(program),
+            source,
+            last_checked_at: now(),
+            error: Some(
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("Runtime returned an error")
+                    .to_string(),
+            ),
+        }),
+        Err(error) => Ok(RuntimeInfo {
+            name: name.to_string(),
+            found: false,
+            version: None,
+            path: Some(program),
+            source,
+            last_checked_at: now(),
+            error: Some(error.to_string()),
+        }),
+    }
+}
+
+fn runtime_version_args(name: &str) -> Result<&'static [&'static str], String> {
+    match name {
+        "node" | "npm" | "pnpm" | "yarn" => Ok(&["-v"]),
+        "bun" => Ok(&["--version"]),
+        "php" => Ok(&["-v"]),
+        "git" => Ok(&["--version"]),
+        _ => Err("Unsupported runtime.".to_string()),
+    }
 }
 
 fn runtime_diagnostic(name: &str, settings: &Settings, args: &[&str]) -> DiagnosticItem {
@@ -1529,6 +1614,26 @@ fn resolve_runtime(name: &str, settings: &Settings) -> String {
     name.to_string()
 }
 
+fn runtime_source(name: &str, settings: &Settings, resolved: &str) -> String {
+    let configured = match name {
+        "node" => &settings.node_path,
+        "npm" => &settings.npm_path,
+        "pnpm" => &settings.pnpm_path,
+        "yarn" => &settings.yarn_path,
+        "bun" => &settings.bun_path,
+        "php" => &settings.php_path,
+        "git" => &settings.git_path,
+        _ => "",
+    };
+    if !configured.trim().is_empty() {
+        return "custom".to_string();
+    }
+    if settings.use_bundled_node && Path::new(resolved).exists() {
+        return "bundled".to_string();
+    }
+    "system".to_string()
+}
+
 fn runtime_candidates(name: &str) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if cfg!(windows) {
@@ -2221,5 +2326,12 @@ mod tests {
     fn validate_project_type_rejects_unknown() {
         assert!(validate_project_type("next").is_ok());
         assert!(validate_project_type("unknown").is_err());
+    }
+
+    #[test]
+    fn runtime_version_args_accept_supported_runtimes() {
+        assert_eq!(runtime_version_args("node").unwrap(), ["-v"]);
+        assert_eq!(runtime_version_args("bun").unwrap(), ["--version"]);
+        assert!(runtime_version_args("powershell").is_err());
     }
 }

@@ -8,6 +8,7 @@ import type {
   ServerProcess,
   Settings,
   DiagnosticItem,
+  RuntimeInfo,
   TemplateInfo,
 } from './types';
 
@@ -48,5 +49,7 @@ export const api = {
   importTemplateZip: (zipPath: string) => invoke<TemplateInfo>('import_template_zip', { zipPath }),
   exportTemplateZip: (templateId: string) => invoke<string>('export_template_zip', { templateId }),
   detectProjectType: (path: string) => invoke<ProjectType>('detect_project_type', { path }),
+  checkRuntime: (name: string) => invoke<RuntimeInfo>('check_runtime', { name }),
+  checkAllRuntimes: () => invoke<RuntimeInfo[]>('check_all_runtimes'),
   diagnostics: () => invoke<DiagnosticItem[]>('diagnostics'),
 };

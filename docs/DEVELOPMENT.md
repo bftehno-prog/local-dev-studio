@@ -31,6 +31,7 @@ cargo test
 - `src/lib/` contains legacy API, types, i18n and constants.
 - `src/components/ui/` contains shared UI primitives.
 - `src-tauri/src/` contains Rust commands, state, security validation, utilities, migrations and process logic.
+- Runtime checks are exposed through `check_runtime` and `check_all_runtimes`.
 - `docs/` contains Markdown docs.
 - `docs-site/` contains static HTML documentation.
 

@@ -15,6 +15,7 @@
 - Prettier configuration and `pnpm format:check`.
 - Frontend shared API, hooks, preview and reusable data-view modules.
 - Rust `state`, `security` and `utils` modules.
+- Runtime manager commands and Settings runtime health table.
 
 ### Changed
 
@@ -25,6 +26,7 @@
 - Package manager settings are validated against an allow-list before saving.
 - Settings are grouped into tabs without changing the visual language.
 - CI and release workflows now run format/lint/clippy gates; tagged releases publish installers with checksums.
+- Runtime diagnostics now expose source, path, version and last checked timestamp for supported tools.
 
 ### Fixed
 

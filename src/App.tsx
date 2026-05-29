@@ -24,6 +24,7 @@ import type {
   LogEntry,
   PortInfo,
   Project,
+  RuntimeInfo,
   ServerProcess,
   Settings,
   TemplateInfo,
@@ -49,6 +50,7 @@ export default function App() {
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>([]);
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
   const [settings, setSettings] = useState<Settings>(emptySettings);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
@@ -90,13 +92,14 @@ export default function App() {
   }, [settingsDirty]);
   const loadTemplates = useCallback(async () => setTemplates(await api.listTemplates()), []);
   const loadDiagnostics = useCallback(async () => setDiagnostics(await api.diagnostics()), []);
+  const loadRuntimes = useCallback(async () => setRuntimes(await api.checkAllRuntimes()), []);
   const refreshVisible = useCallback(async () => {
     const tasks: Promise<unknown>[] = [loadServersAndPorts()];
     if (active === 'dashboard') tasks.push(loadDashboard());
     if (active === 'projects') tasks.push(loadProjects());
     if (active === 'logs') tasks.push(loadLogs());
     if (active === 'templates' || active === 'sandboxes') tasks.push(loadTemplates());
-    if (active === 'settings') tasks.push(loadSettings(), loadDiagnostics());
+    if (active === 'settings') tasks.push(loadSettings(), loadDiagnostics(), loadRuntimes());
     await Promise.all(tasks);
   }, [
     active,
@@ -104,6 +107,7 @@ export default function App() {
     loadDiagnostics,
     loadLogs,
     loadProjects,
+    loadRuntimes,
     loadServersAndPorts,
     loadSettings,
     loadTemplates,
@@ -117,14 +121,24 @@ export default function App() {
       loadLogs().catch(showError),
       loadSettings().catch(showError),
       loadTemplates().catch(showError),
+      loadRuntimes().catch(showError),
     ]);
-  }, [loadDashboard, loadLogs, loadProjects, loadServersAndPorts, loadSettings, loadTemplates]);
+  }, [
+    loadDashboard,
+    loadLogs,
+    loadProjects,
+    loadRuntimes,
+    loadServersAndPorts,
+    loadSettings,
+    loadTemplates,
+  ]);
 
   useEffect(() => {
     if (active === 'settings') {
       void loadDiagnostics().catch(showError);
+      void loadRuntimes().catch(showError);
     }
-  }, [active, loadDiagnostics]);
+  }, [active, loadDiagnostics, loadRuntimes]);
 
   useEffect(() => {
     const timer = window.setInterval(() => void loadServersAndPorts().catch(showError), 2000);
@@ -184,6 +198,10 @@ export default function App() {
 
   async function refreshDiagnostics() {
     await run(loadDiagnostics, t('message.diagnosticsRefreshed'));
+  }
+
+  async function refreshRuntimes() {
+    await run(loadRuntimes, t('message.runtimesRefreshed'));
   }
 
   const previewWidth = useMemo(() => {
@@ -295,7 +313,9 @@ export default function App() {
             onChange={updateSettings}
             onSave={saveSettings}
             diagnostics={diagnostics}
+            runtimes={runtimes}
             onRefreshDiagnostics={refreshDiagnostics}
+            onRefreshRuntimes={refreshRuntimes}
             t={t}
             language={language}
           />
@@ -820,7 +840,9 @@ function SettingsView({
   onChange,
   onSave,
   diagnostics,
+  runtimes,
   onRefreshDiagnostics,
+  onRefreshRuntimes,
   t,
   language,
 }: {
@@ -828,7 +850,9 @@ function SettingsView({
   onChange: (settings: Settings) => void;
   onSave: () => Promise<void>;
   diagnostics: DiagnosticItem[];
+  runtimes: RuntimeInfo[];
   onRefreshDiagnostics: () => Promise<void>;
+  onRefreshRuntimes: () => Promise<void>;
   t: TFunction;
   language: Language;
 }) {
@@ -903,6 +927,11 @@ function SettingsView({
 
       {settingsTab === 'runtime' && (
         <Panel title={t('settings.runtime')}>
+          <div className="toolbar">
+            <button onClick={() => void onRefreshRuntimes()}>
+              <RefreshCcw size={16} /> {t('action.rerunDiagnostics')}
+            </button>
+          </div>
           <Toggle
             label={t('settings.useBundledNode')}
             checked={settings.use_bundled_node}
@@ -948,6 +977,39 @@ function SettingsView({
             value={settings.git_path}
             onChange={(value) => set('git_path', value)}
           />
+          <h2>{t('settings.runtimeHealth')}</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>{t('table.runtime')}</th>
+                <th>{t('table.status')}</th>
+                <th>{t('table.version')}</th>
+                <th>{t('settings.source')}</th>
+                <th>{t('table.path')}</th>
+                <th>{t('table.error')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runtimes.map((runtime) => (
+                <tr key={runtime.name}>
+                  <td>{runtime.name}</td>
+                  <td>
+                    <span className={`status ${runtime.found ? 'running' : 'error'}`}>
+                      {runtime.found ? 'OK' : t('empty.notFound')}
+                    </span>
+                  </td>
+                  <td>
+                    <code>{runtime.version || '-'}</code>
+                  </td>
+                  <td>{runtime.source}</td>
+                  <td>
+                    <code>{runtime.path || '-'}</code>
+                  </td>
+                  <td>{runtime.error || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Panel>
       )}
 
