@@ -6,7 +6,7 @@ use std::{
     env,
     fs,
     io::{BufRead, BufReader},
-    net::{TcpListener, UdpSocket},
+    net::{IpAddr, TcpListener},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
@@ -20,6 +20,8 @@ use tauri::{
     AppHandle, Manager, State,
 };
 use uuid::Uuid;
+
+mod db;
 
 #[derive(Default)]
 struct ManagedProcesses {
@@ -169,7 +171,7 @@ pub fn run() {
             if let Some(parent) = db_path.parent() {
                 fs::create_dir_all(parent)?;
             }
-            init_database(&db_path).map_err(|error| error.to_string())?;
+            db::migrations::run_migrations(&db_path).map_err(|error| error.to_string())?;
             seed_defaults(&db_path).map_err(|error| error.to_string())?;
             app.manage(AppState {
                 db_path: db_path.clone(),
@@ -224,6 +226,7 @@ fn connect(db_path: &Path) -> Result<Connection, String> {
     Connection::open(db_path).map_err(|error| error.to_string())
 }
 
+#[allow(dead_code)]
 fn init_database(db_path: &Path) -> Result<(), String> {
     let conn = connect(db_path)?;
     conn.execute_batch(
@@ -854,13 +857,28 @@ fn network_url(port: u16) -> Result<String, String> {
 }
 
 fn local_ip_address() -> String {
-    UdpSocket::bind("0.0.0.0:0")
-        .and_then(|socket| {
-            socket.connect("8.8.8.8:80")?;
-            socket.local_addr()
-        })
-        .map(|addr| addr.ip().to_string())
-        .unwrap_or_else(|_| "127.0.0.1".to_string())
+    if cfg!(windows) {
+        local_ip_from_ipconfig().unwrap_or_else(|| "127.0.0.1".to_string())
+    } else {
+        "127.0.0.1".to_string()
+    }
+}
+
+fn local_ip_from_ipconfig() -> Option<String> {
+    let output = Command::new("ipconfig").output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    for line in text.lines() {
+        if !line.contains("IPv4") {
+            continue;
+        }
+        let candidate = line.split(':').nth(1)?.trim();
+        if let Ok(IpAddr::V4(ip)) = candidate.parse::<IpAddr>() {
+            if !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() {
+                return Some(ip.to_string());
+            }
+        }
+    }
+    None
 }
 
 #[tauri::command]

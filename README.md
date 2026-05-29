@@ -2,6 +2,11 @@
 
 Local Dev Studio is a Windows desktop app built with Tauri 2, React, TypeScript, Rust and SQLite. It manages local dev servers for Next.js, Vite, Astro, static HTML/CSS/JS and PHP projects.
 
+> Screenshot placeholder: Dashboard
+> Screenshot placeholder: Projects
+> Screenshot placeholder: Live Preview
+> Screenshot placeholder: Settings
+
 ## Requirements
 
 - Node.js LTS or newer
@@ -58,6 +63,28 @@ The installer is produced by Tauri under `src-tauri/target/release/bundle`.
 - GitHub Actions check and release workflows.
 - Basic Rust and React UI tests.
 
+## Supported Project Types
+
+- Next.js
+- Vite
+- Astro
+- PHP
+- Static HTML/CSS/JS
+
+## Live Preview and Network Preview
+
+Live Preview embeds local project URLs in the app, supports refresh/copy/open-in-browser actions, and can show a LAN URL with QR code when network preview is enabled. LAN IP detection uses Windows network configuration and falls back to `127.0.0.1`.
+
+## Project Structure
+
+- `src/` React frontend.
+- `src/app/` navigation and frontend constants.
+- `src/components/ui/` shared UI primitives and UI tests.
+- `src-tauri/src/` Rust backend.
+- `src-tauri/src/db/` SQLite migrations.
+- `docs/` Markdown documentation.
+- `docs-site/` static HTML/CSS documentation.
+
 ## Current Limitations
 
 - HTTPS preview, proxy rules, hosts and SSL certificate controls are marked as in development and disabled in the UI.
@@ -98,6 +125,26 @@ Environment variable values are passed to child processes but only keys are writ
 - If the preview is blank, verify the server URL in Live Preview and use the external browser button.
 - If a port is occupied by an external process, Local Dev Studio will not kill it automatically.
 - If installer build fails with access denied, close the running `local-dev-studio.exe` and build again.
+
+## Documentation
+
+- [Markdown docs](docs/README.md)
+- [Static HTML docs](docs-site/index.html)
+- [Roadmap](docs/ROADMAP.md)
+- [Changelog](docs/CHANGELOG.md)
+- [Updater notes](docs/updater.md)
+
+## Roadmap
+
+See [docs/ROADMAP.md](docs/ROADMAP.md).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+No open-source license has been selected yet. Treat the repository as all rights reserved until a license is added.
 
 ## Production Readiness Checklist
 

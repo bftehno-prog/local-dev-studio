@@ -53,37 +53,69 @@ export default function App() {
   const language = settings.language || "en";
   const t: TFunction = (key) => translate(language, key);
 
-  const loadAll = useCallback(async () => {
-    const [nextDashboard, nextProjects, nextServers, nextPorts, nextLogs, nextSettings, nextTemplates, nextDiagnostics] = await Promise.all([
-      api.dashboard(),
-      api.listProjects(),
-      api.listServers(),
-      api.listPorts(),
-      api.listLogs(undefined, logLevel || undefined, logSearch || undefined),
-      api.getSettings(),
-      api.listTemplates(),
-      api.diagnostics()
-    ]);
-    setDashboard(nextDashboard);
+  const loadDashboard = useCallback(async () => setDashboard(await api.dashboard()), []);
+  const loadProjects = useCallback(async () => {
+    const nextProjects = await api.listProjects();
     setProjects(nextProjects);
+    setSelectedProjectId((current) => current || nextProjects[0]?.id);
+  }, []);
+  const loadServersAndPorts = useCallback(async () => {
+    const [nextServers, nextPorts] = await Promise.all([api.listServers(), api.listPorts()]);
     setServers(nextServers);
     setPorts(nextPorts);
-    setLogs(nextLogs);
+  }, []);
+  const loadLogs = useCallback(async () => {
+    setLogs(await api.listLogs(undefined, logLevel || undefined, logSearch || undefined));
+  }, [logLevel, logSearch]);
+  const loadSettings = useCallback(async () => {
     if (!settingsDirty) {
-      setSettings(nextSettings);
+      setSettings(await api.getSettings());
     }
-    setTemplates(nextTemplates);
-    setDiagnostics(nextDiagnostics);
-    if (!selectedProjectId && nextProjects[0]) {
-      setSelectedProjectId(nextProjects[0].id);
-    }
-  }, [logLevel, logSearch, selectedProjectId, settingsDirty]);
+  }, [settingsDirty]);
+  const loadTemplates = useCallback(async () => setTemplates(await api.listTemplates()), []);
+  const loadDiagnostics = useCallback(async () => setDiagnostics(await api.diagnostics()), []);
+  const refreshVisible = useCallback(async () => {
+    const tasks: Promise<unknown>[] = [loadServersAndPorts()];
+    if (active === "dashboard") tasks.push(loadDashboard());
+    if (active === "projects") tasks.push(loadProjects());
+    if (active === "logs") tasks.push(loadLogs());
+    if (active === "templates" || active === "sandboxes") tasks.push(loadTemplates());
+    if (active === "settings") tasks.push(loadSettings(), loadDiagnostics());
+    await Promise.all(tasks);
+  }, [active, loadDashboard, loadDiagnostics, loadLogs, loadProjects, loadServersAndPorts, loadSettings, loadTemplates]);
 
   useEffect(() => {
-    void loadAll().catch(showError);
-    const timer = window.setInterval(() => void loadAll().catch(showError), 2000);
+    void Promise.all([
+      loadDashboard().catch(showError),
+      loadProjects().catch(showError),
+      loadServersAndPorts().catch(showError),
+      loadLogs().catch(showError),
+      loadSettings().catch(showError),
+      loadTemplates().catch(showError)
+    ]);
+  }, [loadDashboard, loadLogs, loadProjects, loadServersAndPorts, loadSettings, loadTemplates]);
+
+  useEffect(() => {
+    if (active === "settings") {
+      void loadDiagnostics().catch(showError);
+    }
+  }, [active, loadDiagnostics]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadServersAndPorts().catch(showError), 2000);
     return () => window.clearInterval(timer);
-  }, [loadAll]);
+  }, [loadServersAndPorts]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => void loadDashboard().catch(showError), 5000);
+    return () => window.clearInterval(timer);
+  }, [loadDashboard]);
+
+  useEffect(() => {
+    if (active !== "logs") return;
+    const timer = window.setInterval(() => void loadLogs().catch(showError), 5000);
+    return () => window.clearInterval(timer);
+  }, [active, loadLogs]);
 
   useEffect(() => {
     const running = selectedProject ? servers.find((server) => server.project_id === selectedProject.id) : servers[0];
@@ -103,7 +135,7 @@ export default function App() {
       setMessage("");
       await action();
       setMessage(success);
-      await loadAll();
+      await refreshVisible();
     } catch (error) {
       showError(error);
     }
@@ -123,7 +155,7 @@ export default function App() {
   }
 
   async function refreshDiagnostics() {
-    await run(async () => setDiagnostics(await api.diagnostics()), t("message.diagnosticsRefreshed"));
+    await run(loadDiagnostics, t("message.diagnosticsRefreshed"));
   }
 
   const previewWidth = useMemo(() => {
@@ -174,7 +206,7 @@ export default function App() {
             <p>{message || t("top.subtitle")}</p>
           </div>
           <div className="top-actions">
-            <button onClick={() => void loadAll().catch(showError)}>
+            <button onClick={() => void refreshVisible().catch(showError)}>
               <RefreshCcw size={16} /> {t("action.refresh")}
             </button>
             <button onClick={() => void run(() => api.startAllProjects(), t("message.allStarted"))}>
