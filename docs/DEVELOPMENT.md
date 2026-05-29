@@ -35,6 +35,7 @@ cargo test
 - Project readiness checks are exposed through `project_doctor`.
 - First-run onboarding completion is persisted in the settings JSON as `onboarding_completed`.
 - Project Detail is currently rendered inside the Projects feature and reuses existing project actions.
+- Shared-hosting compatibility checks are exposed through `hosting_compatibility_check`.
 - `docs/` contains Markdown docs.
 - `docs-site/` contains static HTML documentation.
 

@@ -5,6 +5,7 @@ import type {
   PortInfo,
   Project,
   ProjectDoctorReport,
+  HostingCompatibilityReport,
   ProjectType,
   ServerProcess,
   Settings,
@@ -55,5 +56,7 @@ export const api = {
   checkRuntime: (name: string) => invoke<RuntimeInfo>('check_runtime', { name }),
   checkAllRuntimes: () => invoke<RuntimeInfo[]>('check_all_runtimes'),
   projectDoctor: (id: string) => invoke<ProjectDoctorReport>('project_doctor', { id }),
+  hostingCompatibilityCheck: (id: string) =>
+    invoke<HostingCompatibilityReport>('hosting_compatibility_check', { id }),
   diagnostics: () => invoke<DiagnosticItem[]>('diagnostics'),
 };

@@ -150,3 +150,9 @@ export interface ProjectDoctorReport {
   project_name: string;
   checks: ProjectDoctorCheck[];
 }
+
+export interface HostingCompatibilityReport {
+  project_id: string;
+  project_name: string;
+  checks: ProjectDoctorCheck[];
+}

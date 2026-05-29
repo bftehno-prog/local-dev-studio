@@ -21,6 +21,7 @@
 - Trusted Project Mode with SQLite trust state and Projects page trust controls.
 - First-run onboarding screen backed by persisted settings.
 - Project Detail panel with runtime, command, preview URL, trust state, actions and recent logs.
+- Shared Hosting Compatibility Checker for PHP/static projects.
 
 ### Changed
 
@@ -36,6 +37,7 @@
 - Starting untrusted projects is blocked until the user explicitly trusts the project.
 - New users see runtime, folder, port and preview checks before entering the main workspace.
 - The Projects screen now exposes selected project details without leaving the existing workflow.
+- PHP/static projects can be scanned for localhost URLs, Windows paths, mixed content and common shared-hosting entrypoint issues.
 
 ### Fixed
 

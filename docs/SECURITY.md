@@ -42,3 +42,7 @@ The Tauri CSP allows the application itself, Tauri IPC, local preview servers an
 ## Network Preview Risks
 
 LAN preview exposes the dev server to other devices on the network. Use it only on trusted networks.
+
+## Shared Hosting Checks
+
+PHP and static projects can be scanned before upload for localhost URLs, absolute Windows paths, mixed `http://` content, missing entrypoints and common shared-hosting folder assumptions. This is a compatibility helper, not a security guarantee.

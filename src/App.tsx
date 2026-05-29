@@ -22,6 +22,7 @@ import type {
   DashboardData,
   DiagnosticItem,
   LogEntry,
+  HostingCompatibilityReport,
   PortInfo,
   Project,
   ProjectDoctorReport,
@@ -56,6 +57,7 @@ export default function App() {
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [doctorReport, setDoctorReport] = useState<ProjectDoctorReport | null>(null);
+  const [hostingReport, setHostingReport] = useState<HostingCompatibilityReport | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
   const [previewUrl, setPreviewUrl] = useState('');
   const [manualPreviewUrl, setManualPreviewUrl] = useState('');
@@ -342,9 +344,11 @@ export default function App() {
             logs={logs}
             settings={settings}
             doctorReport={doctorReport}
+            hostingReport={hostingReport}
             selectedProjectId={selectedProjectId}
             onSelect={setSelectedProjectId}
             onDoctor={setDoctorReport}
+            onHosting={setHostingReport}
             onRun={run}
             t={t}
           />
@@ -569,9 +573,11 @@ function ProjectsView({
   logs,
   settings,
   doctorReport,
+  hostingReport,
   selectedProjectId,
   onSelect,
   onDoctor,
+  onHosting,
   onRun,
   t,
 }: {
@@ -580,9 +586,11 @@ function ProjectsView({
   logs: LogEntry[];
   settings: Settings;
   doctorReport: ProjectDoctorReport | null;
+  hostingReport: HostingCompatibilityReport | null;
   selectedProjectId?: string;
   onSelect: (id: string) => void;
   onDoctor: (report: ProjectDoctorReport) => void;
+  onHosting: (report: HostingCompatibilityReport) => void;
   onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
   t: TFunction;
 }) {
@@ -841,10 +849,38 @@ function ProjectsView({
               >
                 {t('action.runDoctor')}
               </button>
+              <button
+                onClick={() =>
+                  onRun(
+                    async () => onHosting(await api.hostingCompatibilityCheck(selectedProject.id)),
+                    t('message.hostingReady'),
+                  )
+                }
+                disabled={!['php', 'static'].includes(selectedProject.project_type)}
+              >
+                {t('action.checkHosting')}
+              </button>
             </div>
           </div>
           <h2>{t('projects.recentLogs')}</h2>
           <LogList logs={selectedLogs} t={t} />
+        </Panel>
+      )}
+      {hostingReport && (
+        <Panel title={`${t('projects.hostingCompatibility')}: ${hostingReport.project_name}`}>
+          <div className="logs">
+            {hostingReport.checks.map((check) => (
+              <div
+                className={`log ${check.status === 'ok' ? 'info' : 'warning'}`}
+                key={check.label}
+              >
+                <strong>{check.status === 'ok' ? 'OK' : 'WARN'}</strong>
+                <p>
+                  {check.label}: {check.message}
+                </p>
+              </div>
+            ))}
+          </div>
         </Panel>
       )}
     </div>
