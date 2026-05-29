@@ -19,6 +19,7 @@
 - Dedicated Diagnostics page with copyable issue report.
 - Project Doctor command and Projects page action.
 - Trusted Project Mode with SQLite trust state and Projects page trust controls.
+- First-run onboarding screen backed by persisted settings.
 
 ### Changed
 
@@ -32,6 +33,7 @@
 - Runtime diagnostics now expose source, path, version and last checked timestamp for supported tools.
 - Projects can now run a basic doctor check for path, type, runtime, dev script and entrypoint readiness.
 - Starting untrusted projects is blocked until the user explicitly trusts the project.
+- New users see runtime, folder, port and preview checks before entering the main workspace.
 
 ### Fixed
 

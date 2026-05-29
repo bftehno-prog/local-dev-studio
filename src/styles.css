@@ -84,6 +84,24 @@ code {
   min-height: 100vh;
 }
 
+.onboarding {
+  min-height: 100vh;
+  background: var(--bg);
+  padding: 24px;
+}
+
+.onboarding-shell {
+  max-width: 1040px;
+  margin: 0 auto;
+  display: grid;
+  gap: 16px;
+}
+
+.onboarding header p {
+  color: var(--muted);
+  margin-top: 6px;
+}
+
 .sidebar {
   border-right: 1px solid var(--line);
   background: var(--surface);

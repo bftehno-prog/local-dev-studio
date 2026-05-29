@@ -54,6 +54,8 @@ struct Project {
 struct Settings {
     #[serde(default = "default_language")]
     language: String,
+    #[serde(default)]
+    onboarding_completed: bool,
     projects_folder: String,
     sandboxes_folder: String,
     package_manager: String,
@@ -359,6 +361,7 @@ fn default_settings() -> Settings {
     let base = home.join("LocalDevStudio");
     Settings {
         language: "ru".to_string(),
+        onboarding_completed: false,
         projects_folder: base.join("projects").to_string_lossy().to_string(),
         sandboxes_folder: base.join("sandboxes").to_string_lossy().to_string(),
         package_manager: "pnpm".to_string(),

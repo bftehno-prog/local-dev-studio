@@ -61,6 +61,7 @@ export interface PortInfo {
 
 export interface Settings {
   language: 'en' | 'ru';
+  onboarding_completed: boolean;
   projects_folder: string;
   sandboxes_folder: string;
   package_manager: string;

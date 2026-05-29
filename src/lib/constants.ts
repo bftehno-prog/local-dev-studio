@@ -2,6 +2,7 @@ import type { Settings } from './types';
 
 export const emptySettings: Settings = {
   language: 'ru',
+  onboarding_completed: false,
   projects_folder: '',
   sandboxes_folder: '',
   package_manager: 'pnpm',
