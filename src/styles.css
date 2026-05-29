@@ -249,6 +249,11 @@ h2 {
   flex: 1;
 }
 
+.project-detail-actions {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

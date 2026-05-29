@@ -20,6 +20,7 @@
 - Project Doctor command and Projects page action.
 - Trusted Project Mode with SQLite trust state and Projects page trust controls.
 - First-run onboarding screen backed by persisted settings.
+- Project Detail panel with runtime, command, preview URL, trust state, actions and recent logs.
 
 ### Changed
 
@@ -34,6 +35,7 @@
 - Projects can now run a basic doctor check for path, type, runtime, dev script and entrypoint readiness.
 - Starting untrusted projects is blocked until the user explicitly trusts the project.
 - New users see runtime, folder, port and preview checks before entering the main workspace.
+- The Projects screen now exposes selected project details without leaving the existing workflow.
 
 ### Fixed
 

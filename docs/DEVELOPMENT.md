@@ -34,6 +34,7 @@ cargo test
 - Runtime checks are exposed through `check_runtime` and `check_all_runtimes`.
 - Project readiness checks are exposed through `project_doctor`.
 - First-run onboarding completion is persisted in the settings JSON as `onboarding_completed`.
+- Project Detail is currently rendered inside the Projects feature and reuses existing project actions.
 - `docs/` contains Markdown docs.
 - `docs-site/` contains static HTML documentation.
 

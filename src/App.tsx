@@ -338,6 +338,9 @@ export default function App() {
         {active === 'projects' && (
           <ProjectsView
             projects={projects}
+            servers={servers}
+            logs={logs}
+            settings={settings}
             doctorReport={doctorReport}
             selectedProjectId={selectedProjectId}
             onSelect={setSelectedProjectId}
@@ -562,6 +565,9 @@ function OnboardingView({
 
 function ProjectsView({
   projects,
+  servers,
+  logs,
+  settings,
   doctorReport,
   selectedProjectId,
   onSelect,
@@ -570,6 +576,9 @@ function ProjectsView({
   t,
 }: {
   projects: Project[];
+  servers: ServerProcess[];
+  logs: LogEntry[];
+  settings: Settings;
   doctorReport: ProjectDoctorReport | null;
   selectedProjectId?: string;
   onSelect: (id: string) => void;
@@ -578,6 +587,13 @@ function ProjectsView({
   t: TFunction;
 }) {
   const [manualPath, setManualPath] = useState('');
+  const selectedProject = projects.find((project) => project.id === selectedProjectId);
+  const selectedServer = selectedProject
+    ? servers.find((server) => server.project_id === selectedProject.id)
+    : undefined;
+  const selectedLogs = selectedProject
+    ? logs.filter((log) => log.project_id === selectedProject.id).slice(0, 5)
+    : [];
   async function chooseFolder() {
     const selected = await open({
       directory: true,
@@ -738,6 +754,97 @@ function ProjectsView({
               </div>
             ))}
           </div>
+        </Panel>
+      )}
+      {selectedProject && (
+        <Panel title={`${t('projects.detail')}: ${selectedProject.name}`}>
+          <div className="grid two">
+            <div>
+              <Info label={t('table.type')} value={selectedProject.project_type} />
+              <Info label={t('table.status')} value={selectedProject.status} />
+              <Info
+                label={t('table.trust')}
+                value={selectedProject.trusted ? 'trusted' : 'untrusted'}
+              />
+              <Info label={t('settings.packageManager')} value={settings.package_manager} />
+              <Info label={t('table.runtime')} value={selectedProject.trusted_runtime || '-'} />
+              <Info
+                label={t('table.port')}
+                value={String(selectedProject.port || selectedServer?.port || '-')}
+              />
+              <Info label={t('projects.previewUrl')} value={selectedServer?.url || '-'} />
+              <Info
+                label={t('table.command')}
+                value={selectedProject.command || selectedServer?.command || '-'}
+              />
+              <Info label={t('table.path')} value={selectedProject.path} />
+            </div>
+            <div className="toolbar project-detail-actions">
+              <button
+                onClick={() =>
+                  onRun(() => api.startProject(selectedProject.id), t('message.projectStarted'))
+                }
+              >
+                <Play size={15} /> {t('action.start')}
+              </button>
+              <button
+                onClick={() =>
+                  onRun(() => api.stopProject(selectedProject.id), t('message.projectStopped'))
+                }
+              >
+                <Square size={15} /> {t('status.stopped')}
+              </button>
+              <button
+                onClick={() =>
+                  onRun(() => api.restartProject(selectedProject.id), t('message.projectRestarted'))
+                }
+              >
+                <ListRestart size={15} /> {t('message.projectRestarted')}
+              </button>
+              <button
+                disabled={!selectedServer?.url}
+                onClick={() =>
+                  selectedServer?.url &&
+                  onRun(() => api.openExternal(selectedServer.url), t('preview.openBrowser'))
+                }
+              >
+                {t('preview.openBrowser')}
+              </button>
+              <button
+                onClick={() =>
+                  onRun(() => api.openPath(selectedProject.path), t('message.folderOpened'))
+                }
+              >
+                <Folder size={15} /> {t('message.folderOpened')}
+              </button>
+              <button
+                onClick={() =>
+                  onRun(() => api.openInCode(selectedProject.path), t('message.codeOpened'))
+                }
+              >
+                <Code2 size={15} /> {t('message.codeOpened')}
+              </button>
+              <button
+                onClick={() =>
+                  onRun(() => api.clearCache(selectedProject.id), t('message.cacheCleared'))
+                }
+              >
+                <RefreshCcw size={15} /> {t('message.cacheCleared')}
+              </button>
+              <button
+                onClick={() =>
+                  onRun(
+                    async () => onDoctor(await api.projectDoctor(selectedProject.id)),
+                    t('message.doctorReady'),
+                  )
+                }
+              >
+                {t('action.runDoctor')}
+              </button>
+            </div>
+          </div>
+          <h2>{t('projects.recentLogs')}</h2>
+          <LogList logs={selectedLogs} t={t} />
         </Panel>
       )}
     </div>
