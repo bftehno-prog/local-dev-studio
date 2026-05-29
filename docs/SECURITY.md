@@ -2,7 +2,7 @@
 
 ## Command Execution
 
-Local Dev Studio does not execute arbitrary commands from the UI. Commands are built from allow-listed project types and package managers.
+Local Dev Studio does not execute arbitrary commands from the UI. Commands are built from allow-listed project types and package managers. Dependency installation is also explicit: starting a Node.js project does not silently run `install`; the user must choose the Install dependencies action for a trusted project.
 
 ## Trusted Project Mode
 

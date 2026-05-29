@@ -602,6 +602,8 @@ function ProjectsView({
   const selectedLogs = selectedProject
     ? logs.filter((log) => log.project_id === selectedProject.id).slice(0, 5)
     : [];
+  const isNodeProject = (project: Project) =>
+    ['next', 'vite', 'astro'].includes(project.project_type);
   async function chooseFolder() {
     const selected = await open({
       directory: true,
@@ -708,6 +710,19 @@ function ProjectsView({
                   >
                     <RefreshCcw size={15} />
                   </button>
+                  {isNodeProject(project) && (
+                    <button
+                      onClick={() =>
+                        onRun(
+                          () => api.installProjectDependencies(project.id),
+                          t('message.dependenciesInstalling'),
+                        )
+                      }
+                      disabled={!project.trusted || project.status === 'installing'}
+                    >
+                      {t('action.installDependencies')}
+                    </button>
+                  )}
                   <button
                     onClick={() =>
                       onRun(
@@ -839,6 +854,19 @@ function ProjectsView({
               >
                 <RefreshCcw size={15} /> {t('message.cacheCleared')}
               </button>
+              {isNodeProject(selectedProject) && (
+                <button
+                  onClick={() =>
+                    onRun(
+                      () => api.installProjectDependencies(selectedProject.id),
+                      t('message.dependenciesInstalling'),
+                    )
+                  }
+                  disabled={!selectedProject.trusted || selectedProject.status === 'installing'}
+                >
+                  {t('action.installDependencies')}
+                </button>
+              )}
               <button
                 onClick={() =>
                   onRun(

@@ -243,6 +243,7 @@ pub fn run() {
             stop_project,
             trust_project,
             reset_project_trust,
+            install_project_dependencies,
             start_all_projects,
             stop_all_projects,
             open_path,
@@ -1266,6 +1267,86 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
 }
 
 #[tauri::command]
+fn install_project_dependencies(id: String, state: State<AppState>) -> Result<Project, String> {
+    let mut project = get_project(&state.db_path, &id)?;
+    validate_project_path(Path::new(&project.path))?;
+    if !matches!(project.project_type.as_str(), "next" | "vite" | "astro") {
+        return Err("Dependency installation is only available for Node.js projects.".to_string());
+    }
+    if !project.trusted {
+        return Err(
+            "Project is not trusted yet. Trust the project before installing dependencies."
+                .to_string(),
+        );
+    }
+    ensure_file(
+        Path::new(&project.path).join("package.json"),
+        "package.json not found. Cannot install dependencies.",
+    )?;
+    let settings = read_settings_at(&state.db_path)?;
+    let manager = package_manager(&settings);
+    let program = resolve_runtime(&manager, &settings);
+    let args = vec!["install".to_string()];
+    let display = format!("{} install", program);
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "build",
+        &format!("Installing dependencies: {}", display),
+    )?;
+    let mut command = Command::new(&program);
+    command.args(&args);
+    command.current_dir(&project.path);
+    command.env("PATH", runtime_path(&settings));
+    command.stdout(Stdio::piped());
+    command.stderr(Stdio::piped());
+    command.stdin(Stdio::null());
+    let mut child = command.spawn().map_err(|error| {
+        format!(
+            "Could not start dependency installation with {}. Check Settings > Runtime and make sure the package manager is installed. Details: {}",
+            manager, error
+        )
+    })?;
+    stream_child_logs(&state.db_path, &project, child.stdout.take(), "build");
+    stream_child_logs(&state.db_path, &project, child.stderr.take(), "error");
+    project.status = "installing".to_string();
+    project.updated_at = now();
+    upsert_project(&state.db_path, &project)?;
+    let db_path = state.db_path.clone();
+    let project_id = project.id.clone();
+    thread::spawn(move || match child.wait() {
+        Ok(status) if status.success() => {
+            let _ = update_project_status(&db_path, &project_id, "stopped");
+            let _ = insert_log(
+                &db_path,
+                Some(&project_id),
+                "build",
+                "Dependency installation completed.",
+            );
+        }
+        Ok(status) => {
+            let _ = update_project_status(&db_path, &project_id, "error");
+            let _ = insert_log(
+                &db_path,
+                Some(&project_id),
+                "error",
+                &format!("Dependency installation failed with status {}.", status),
+            );
+        }
+        Err(error) => {
+            let _ = update_project_status(&db_path, &project_id, "error");
+            let _ = insert_log(
+                &db_path,
+                Some(&project_id),
+                "error",
+                &format!("Dependency installation failed: {}", error),
+            );
+        }
+    });
+    Ok(project)
+}
+
+#[tauri::command]
 fn stop_project(id: String, state: State<AppState>) -> Result<Project, String> {
     stop_project_inner(&state, &id)
 }
@@ -1854,36 +1935,6 @@ struct CommandSpec {
     display: String,
 }
 
-fn shell_install_then_run(program: &str, run_args: &[String], display: &str) -> CommandSpec {
-    let install = shell_quote(program).to_string() + " install";
-    let run = std::iter::once(shell_quote(program))
-        .chain(run_args.iter().map(|arg| shell_quote(arg)))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let command_line = format!("{} && {}", install, run);
-    if cfg!(windows) {
-        CommandSpec {
-            program: "cmd".to_string(),
-            args: vec!["/C".to_string(), command_line],
-            display: display.to_string(),
-        }
-    } else {
-        CommandSpec {
-            program: "sh".to_string(),
-            args: vec!["-c".to_string(), command_line],
-            display: display.to_string(),
-        }
-    }
-}
-
-fn shell_quote(value: &str) -> String {
-    if cfg!(windows) {
-        format!("\"{}\"", value.replace('"', "\\\""))
-    } else {
-        format!("'{}'", value.replace('\'', "'\\''"))
-    }
-}
-
 fn build_command(project: &Project, settings: &Settings, port: u16) -> Result<CommandSpec, String> {
     match project.project_type.as_str() {
         "next" => {
@@ -1895,20 +1946,19 @@ fn build_command(project: &Project, settings: &Settings, port: u16) -> Result<Co
                 args.push("--turbopack".to_string());
             }
             args.extend(["-H", "0.0.0.0", "-p", &port.to_string()].iter().map(|value| value.to_string()));
-            if !Path::new(&project.path).join("node_modules").exists() {
-                return Ok(shell_install_then_run(&program, &args, &format!("{} install && {} {}", program, program, args.join(" "))));
-            }
+            ensure_node_modules(&project.path, package_manager.as_str())?;
             Ok(CommandSpec { display: format!("{} {}", program, args.join(" ")), program, args })
         }
         "vite" | "astro" => {
             ensure_file(Path::new(&project.path).join("package.json"), "package.json not found. Vite/Astro projects must have package.json in the root.")?;
+            if !package_json_has_script(&Path::new(&project.path).join("package.json"), "dev") {
+                return Err("No dev script found in package.json. Add a dev script before starting this project.".to_string());
+            }
             let package_manager = package_manager(settings);
             let program = resolve_runtime(package_manager.as_str(), settings);
             let mut args = package_dev_args(package_manager.as_str());
             args.extend(["--host", "0.0.0.0", "--port", &port.to_string()].iter().map(|value| value.to_string()));
-            if !Path::new(&project.path).join("node_modules").exists() {
-                return Ok(shell_install_then_run(&program, &args, &format!("{} install && {} {}", program, program, args.join(" "))));
-            }
+            ensure_node_modules(&project.path, package_manager.as_str())?;
             Ok(CommandSpec { display: format!("{} {}", program, args.join(" ")), program, args })
         }
         "php" => {
@@ -2164,6 +2214,40 @@ fn ensure_file(path: PathBuf, message: &str) -> Result<(), String> {
     } else {
         Err(message.to_string())
     }
+}
+
+fn ensure_node_modules(project_path: &str, package_manager: &str) -> Result<(), String> {
+    if Path::new(project_path).join("node_modules").is_dir() {
+        return Ok(());
+    }
+    let lockfile = detect_lockfile(Path::new(project_path)).unwrap_or_else(|| {
+        format!(
+            "{} lockfile",
+            match package_manager {
+                "npm" => "npm",
+                "yarn" => "Yarn",
+                "bun" => "Bun",
+                _ => "pnpm",
+            }
+        )
+    });
+    Err(format!(
+        "Dependencies are missing. Detected {}. Run Install dependencies before starting this project.",
+        lockfile
+    ))
+}
+
+fn detect_lockfile(project_path: &Path) -> Option<String> {
+    [
+        ("pnpm-lock.yaml", "pnpm-lock.yaml"),
+        ("package-lock.json", "package-lock.json"),
+        ("yarn.lock", "yarn.lock"),
+        ("bun.lockb", "bun.lockb"),
+        ("bun.lock", "bun.lock"),
+    ]
+    .iter()
+    .find(|(file, _)| project_path.join(file).is_file())
+    .map(|(_, label)| (*label).to_string())
 }
 
 fn user_error(error: &str) -> String {
@@ -2748,6 +2832,24 @@ mod tests {
         .unwrap();
         assert!(package_json_has_script(&package_json, "dev"));
         assert!(!package_json_has_script(&package_json, "preview"));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn detect_lockfile_prefers_project_lockfile() {
+        let root = temp_project("lockfile");
+        fs::write(root.join("pnpm-lock.yaml"), "lockfile").unwrap();
+        assert_eq!(detect_lockfile(&root).unwrap(), "pnpm-lock.yaml");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ensure_node_modules_requires_explicit_install() {
+        let root = temp_project("missing-modules");
+        let error = ensure_node_modules(root.to_str().unwrap(), "pnpm").unwrap_err();
+        assert!(error.contains("Dependencies are missing"));
+        fs::create_dir_all(root.join("node_modules")).unwrap();
+        ensure_node_modules(root.to_str().unwrap(), "pnpm").unwrap();
         fs::remove_dir_all(root).unwrap();
     }
 

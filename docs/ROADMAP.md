@@ -5,9 +5,10 @@
 - [x] [DB] Add SQLite schema migrations.
 - [ ] [Preview] Add HTTPS preview with mkcert.
 - [ ] [Preview] Add reverse proxy rules.
-- [ ] [Security] Add trusted project mode.
+- [x] [Security] Add trusted project mode.
 - [ ] [Release] Configure Tauri updater.
-- [ ] [Release] Publish first Windows installer.
-- [ ] [UX] Add first-run onboarding.
+- [x] [Release] Publish first Windows installer.
+- [x] [UX] Add first-run onboarding.
 - [x] [UX] Add empty states and error recovery.
 - [ ] [Tests] Add backend integration tests for project launch.
+- [x] [UX] Split dependency installation from project start.

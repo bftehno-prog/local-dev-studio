@@ -23,6 +23,7 @@
 - Project Detail panel with runtime, command, preview URL, trust state, actions and recent logs.
 - Shared Hosting Compatibility Checker for PHP/static projects.
 - ZIP template preflight validation before extraction.
+- Explicit dependency installation action for Node.js projects.
 
 ### Changed
 
@@ -40,8 +41,10 @@
 - The Projects screen now exposes selected project details without leaving the existing workflow.
 - PHP/static projects can be scanned for localhost URLs, Windows paths, mixed content and common shared-hosting entrypoint issues.
 - Template ZIP archives are now fully checked for structure, traversal paths, file count and expanded size before any files are written.
+- Starting a Node.js project no longer runs package-manager install implicitly; missing dependencies now produce a clear action-oriented error.
 
 ### Fixed
 
 - Project startup remains non-blocking while status is monitored in the background.
 - Process log streaming avoids the clippy `Lines::flatten()` pitfall.
+- Project start is less likely to appear frozen because dependency installation is a separate background action.

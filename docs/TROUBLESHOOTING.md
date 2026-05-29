@@ -8,7 +8,8 @@
 | Port occupied             | Use Ports to identify managed ports; external ports are not killed automatically. |
 | Preview blank             | Refresh preview, open in browser, and check server logs.                          |
 | PHP not found             | Set PHP path in Settings.                                                         |
-| Install fails             | Run package manager install manually in the project folder and inspect output.    |
+| Dependencies are missing  | Trust the project, click Install dependencies, then start the project again.      |
+| Install fails             | Check Logs for package-manager output and verify the runtime path in Settings.    |
 | Tauri build access denied | Close `local-dev-studio.exe` before rebuilding.                                   |
 | SQLite error              | Check app data folder permissions in Diagnostics.                                 |
 | Windows Defender warning  | Sign release builds before distribution.                                          |

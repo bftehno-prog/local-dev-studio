@@ -20,6 +20,8 @@ export const api = {
   addProject: (path: string) => invoke<Project>('add_project', { path }),
   removeProject: (id: string) => invoke<void>('remove_project', { id }),
   startProject: (id: string) => invoke<Project>('start_project', { id }),
+  installProjectDependencies: (id: string) =>
+    invoke<Project>('install_project_dependencies', { id }),
   stopProject: (id: string) => invoke<Project>('stop_project', { id }),
   trustProject: (id: string) => invoke<Project>('trust_project', { id }),
   resetProjectTrust: (id: string) => invoke<Project>('reset_project_trust', { id }),
