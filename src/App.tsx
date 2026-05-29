@@ -1,89 +1,27 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity,
-  AppWindow,
-  Boxes,
   Code2,
+  Copy,
   Database,
   Folder,
-  Gauge,
   Globe2,
   Link,
   ListRestart,
-  Monitor,
   Play,
   Plus,
   Power,
   RefreshCcw,
-  Settings as SettingsIcon,
   Square,
-  Terminal,
-  Trash2
+  Trash2,
+  Upload
 } from "lucide-react";
+import { open } from "@tauri-apps/plugin-dialog";
 import { QRCodeSVG } from "qrcode.react";
+import { devices, sections, type SectionId } from "./app/routes";
 import { api } from "./lib/api";
+import { emptySettings } from "./lib/constants";
 import { translate, type Language, type TranslationKey } from "./lib/i18n";
-import type { DashboardData, LogEntry, PortInfo, Project, ServerProcess, Settings, TemplateInfo } from "./lib/types";
-
-const sections = [
-  ["dashboard", "nav.dashboard", Gauge],
-  ["projects", "nav.projects", Folder],
-  ["sandboxes", "nav.sandboxes", Boxes],
-  ["templates", "nav.templates", AppWindow],
-  ["servers", "nav.servers", Activity],
-  ["ports", "nav.ports", Globe2],
-  ["logs", "nav.logs", Terminal],
-  ["settings", "nav.settings", SettingsIcon]
-] as const;
-
-type SectionId = (typeof sections)[number][0];
-
-const devices = [
-  ["Desktop", 1440],
-  ["Laptop", 1280],
-  ["Tablet", 768],
-  ["Mobile", 390],
-  ["Custom", 980]
-] as const;
-
-const emptySettings: Settings = {
-  language: "ru",
-  projects_folder: "",
-  sandboxes_folder: "",
-  package_manager: "pnpm",
-  port_start: 3000,
-  port_end: 3999,
-  open_preview_automatically: true,
-  start_minimized: false,
-  launch_on_startup: false,
-  use_bundled_node: true,
-  node_path: "",
-  npm_path: "",
-  pnpm_path: "",
-  yarn_path: "",
-  bun_path: "",
-  php_path: "",
-  git_path: "",
-  use_turbopack: false,
-  clear_next_before_start: false,
-  enable_network_preview: true,
-  enable_https: false,
-  default_next_port: 3000,
-  default_device: "Desktop",
-  desktop_width: 1440,
-  laptop_width: 1280,
-  tablet_width: 768,
-  mobile_width: 390,
-  custom_width: 980,
-  auto_reload_preview: true,
-  open_external_browser_on_start: false,
-  environment_variables: "",
-  hosts: "",
-  ssl_certificates: "",
-  proxy_rules: "",
-  process_timeout: 60,
-  log_retention: 14
-};
+import type { DashboardData, DiagnosticItem, LogEntry, PortInfo, Project, ServerProcess, Settings, TemplateInfo } from "./lib/types";
 
 type TFunction = (key: TranslationKey) => string;
 
@@ -94,6 +32,7 @@ export default function App() {
   const [servers, setServers] = useState<ServerProcess[]>([]);
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticItem[]>([]);
   const [settings, setSettings] = useState<Settings>(emptySettings);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
@@ -103,6 +42,8 @@ export default function App() {
   const [activePreviewServerId, setActivePreviewServerId] = useState("");
   const [previewKey, setPreviewKey] = useState(0);
   const [fitPreview, setFitPreview] = useState(true);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
   const [device, setDevice] = useState("Desktop");
   const [logLevel, setLogLevel] = useState("");
   const [logSearch, setLogSearch] = useState("");
@@ -113,14 +54,15 @@ export default function App() {
   const t: TFunction = (key) => translate(language, key);
 
   const loadAll = useCallback(async () => {
-    const [nextDashboard, nextProjects, nextServers, nextPorts, nextLogs, nextSettings, nextTemplates] = await Promise.all([
+    const [nextDashboard, nextProjects, nextServers, nextPorts, nextLogs, nextSettings, nextTemplates, nextDiagnostics] = await Promise.all([
       api.dashboard(),
       api.listProjects(),
       api.listServers(),
       api.listPorts(),
       api.listLogs(undefined, logLevel || undefined, logSearch || undefined),
       api.getSettings(),
-      api.listTemplates()
+      api.listTemplates(),
+      api.diagnostics()
     ]);
     setDashboard(nextDashboard);
     setProjects(nextProjects);
@@ -131,6 +73,7 @@ export default function App() {
       setSettings(nextSettings);
     }
     setTemplates(nextTemplates);
+    setDiagnostics(nextDiagnostics);
     if (!selectedProjectId && nextProjects[0]) {
       setSelectedProjectId(nextProjects[0].id);
     }
@@ -179,6 +122,10 @@ export default function App() {
     }, t("message.settingsSaved"));
   }
 
+  async function refreshDiagnostics() {
+    await run(async () => setDiagnostics(await api.diagnostics()), t("message.diagnosticsRefreshed"));
+  }
+
   const previewWidth = useMemo(() => {
     if (device === "Desktop") return settings.desktop_width;
     if (device === "Laptop") return settings.laptop_width;
@@ -192,6 +139,13 @@ export default function App() {
     ? activePreviewServer?.network_url || localPreviewUrl.replace("localhost", "127.0.0.1")
     : localPreviewUrl;
   const previewScale = fitPreview ? Math.min(1, 620 / previewWidth) : 1;
+
+  useEffect(() => {
+    if (localPreviewUrl) {
+      setPreviewLoading(true);
+      setPreviewError("");
+    }
+  }, [localPreviewUrl, previewKey, device]);
 
   return (
     <main className="app">
@@ -223,8 +177,17 @@ export default function App() {
             <button onClick={() => void loadAll().catch(showError)}>
               <RefreshCcw size={16} /> {t("action.refresh")}
             </button>
+            <button onClick={() => void run(() => api.startAllProjects(), t("message.allStarted"))}>
+              <Play size={16} /> {t("action.startAll")}
+            </button>
+            <button onClick={() => void run(() => api.stopAllProjects(), t("message.allStopped"))}>
+              <Power size={16} /> {t("action.stopAll")}
+            </button>
             <button onClick={() => setActive("projects")}>
               <Plus size={16} /> {t("action.addProject")}
+            </button>
+            <button onClick={() => setActive("templates")}>
+              <Upload size={16} /> {t("action.importZip")}
             </button>
           </div>
         </header>
@@ -254,7 +217,7 @@ export default function App() {
             t={t}
           />
         )}
-        {active === "settings" && <SettingsView settings={settings} onChange={updateSettings} onSave={saveSettings} t={t} language={language} />}
+        {active === "settings" && <SettingsView settings={settings} onChange={updateSettings} onSave={saveSettings} diagnostics={diagnostics} onRefreshDiagnostics={refreshDiagnostics} t={t} language={language} />}
       </section>
 
       <aside className="preview">
@@ -266,6 +229,9 @@ export default function App() {
           <div className="preview-actions">
             <button disabled={!localPreviewUrl} title={t("preview.reload")} onClick={() => setPreviewKey((value) => value + 1)}>
               <RefreshCcw size={16} />
+            </button>
+            <button disabled={!localPreviewUrl} title={t("preview.copyUrl")} onClick={() => localPreviewUrl && navigator.clipboard.writeText(localPreviewUrl).catch(showError)}>
+              <Copy size={16} />
             </button>
             <button disabled={!localPreviewUrl} title={t("preview.openBrowser")} onClick={() => localPreviewUrl && void api.openExternal(localPreviewUrl).catch(showError)}>
               <Globe2 size={16} />
@@ -315,10 +281,27 @@ export default function App() {
         <div className="preview-frame-shell">
           {localPreviewUrl ? (
             <div className="preview-frame-scale" style={{ width: previewWidth, transform: `scale(${previewScale})` }}>
-              <iframe key={`${localPreviewUrl}-${device}-${previewKey}`} title={t("preview.iframeTitle")} src={localPreviewUrl} />
+              {previewLoading && <div className="preview-state">{t("preview.loading")}</div>}
+              {previewError && <div className="preview-state error">{previewError}</div>}
+              <iframe
+                key={`${localPreviewUrl}-${device}-${previewKey}`}
+                title={t("preview.iframeTitle")}
+                src={localPreviewUrl}
+                onLoad={() => {
+                  setPreviewLoading(false);
+                  setPreviewError("");
+                }}
+                onError={() => {
+                  setPreviewLoading(false);
+                  setPreviewError(t("preview.unavailable"));
+                }}
+              />
             </div>
           ) : (
-            <div className="empty-preview">{t("preview.placeholder")}</div>
+            <div className="empty-preview">
+              <p>{t("preview.placeholder")}</p>
+              {selectedProject && <button onClick={() => void run(() => api.startProject(selectedProject.id), t("message.projectStarted"))}><Play size={16} /> {t("action.start")}</button>}
+            </div>
           )}
         </div>
         {localPreviewUrl && (
@@ -402,11 +385,20 @@ function ProjectsView({
   t: TFunction;
 }) {
   const [manualPath, setManualPath] = useState("");
+  async function chooseFolder() {
+    const selected = await open({ directory: true, multiple: false, title: t("projects.selectFolder") });
+    if (typeof selected === "string") {
+      setManualPath(selected);
+    }
+  }
   return (
     <div className="content">
       <Panel title={t("projects.addExisting")}>
         <div className="input-row">
           <input value={manualPath} onChange={(event) => setManualPath(event.target.value)} placeholder="C:\Users\User\Projects\my-next-app" />
+          <button onClick={() => void chooseFolder()}>
+            <Folder size={16} /> {t("action.chooseFolder")}
+          </button>
           <button onClick={() => onRun(() => api.addProject(manualPath), t("message.projectAdded"))}>
             <Plus size={16} /> {t("action.add")}
           </button>
@@ -472,13 +464,58 @@ function SandboxesView({ templates, onRun, t }: { templates: TemplateInfo[]; onR
 
 function TemplatesView({ templates, onRun, t }: { templates: TemplateInfo[]; onRun: (action: () => Promise<unknown>, success: string) => Promise<void>; t: TFunction }) {
   const [zipPath, setZipPath] = useState("");
+  const [zipMessage, setZipMessage] = useState("");
+  function acceptZip(path: string) {
+    if (!path.toLowerCase().endsWith(".zip")) {
+      setZipMessage(t("templates.zipOnly"));
+      return;
+    }
+    setZipPath(path);
+    setZipMessage("");
+    window.localStorage.setItem("local-dev-studio:lastZipPath", path);
+  }
+  async function chooseZip() {
+    const selected = await open({
+      directory: false,
+      multiple: false,
+      title: t("templates.selectZip"),
+      filters: [{ name: "ZIP", extensions: ["zip"] }]
+    });
+    if (typeof selected === "string") {
+      acceptZip(selected);
+    }
+  }
+  useEffect(() => {
+    setZipPath(window.localStorage.getItem("local-dev-studio:lastZipPath") || "");
+  }, []);
   return (
     <div className="content">
       <Panel title={t("templates.title")}>
+        <div
+          className="drop-zone"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const files = Array.from(event.dataTransfer.files);
+            const zip = files.find((file) => file.name.toLowerCase().endsWith(".zip"));
+            if (!zip) {
+              setZipMessage(t("templates.dropZipWarning"));
+              return;
+            }
+            acceptZip((zip as File & { path?: string }).path || zip.name);
+          }}
+        >
+          <Upload size={18} />
+          <span>{t("templates.dropZip")}</span>
+        </div>
         <div className="toolbar">
           <input value={zipPath} onChange={(event) => setZipPath(event.target.value)} placeholder="C:\Users\User\Downloads\template.zip" />
+          <button onClick={() => void chooseZip()}>
+            <Folder size={16} /> {t("action.chooseZip")}
+          </button>
           <button onClick={() => onRun(() => api.importTemplateZip(zipPath), t("message.templateImported"))}>{t("action.importZip")}</button>
         </div>
+        {zipMessage && <p className="muted">{zipMessage}</p>}
         <table>
           <thead><tr><th>{t("table.name")}</th><th>{t("table.type")}</th><th>{t("table.source")}</th><th>{t("table.actions")}</th></tr></thead>
           <tbody>
@@ -583,12 +620,16 @@ function SettingsView({
   settings,
   onChange,
   onSave,
+  diagnostics,
+  onRefreshDiagnostics,
   t,
   language
 }: {
   settings: Settings;
   onChange: (settings: Settings) => void;
   onSave: () => Promise<void>;
+  diagnostics: DiagnosticItem[];
+  onRefreshDiagnostics: () => Promise<void>;
   t: TFunction;
   language: Language;
 }) {
@@ -609,7 +650,7 @@ function SettingsView({
           <Field label={t("settings.packageManager")} value={settings.package_manager} onChange={(value) => set("package_manager", value)} />
           <NumberField label={t("settings.portStart")} value={settings.port_start} onChange={(value) => set("port_start", value)} />
           <NumberField label={t("settings.portEnd")} value={settings.port_end} onChange={(value) => set("port_end", value)} />
-          <Toggle label={t("settings.openPreview")} checked={settings.open_preview_automatically} onChange={(value) => set("open_preview_automatically", value)} />
+          <Toggle label={t("settings.openPreview")} checked={settings.open_preview_automatically} onChange={(value) => set("open_preview_automatically", value)} disabled />
           <Toggle label={t("settings.startMinimized")} checked={settings.start_minimized} onChange={(value) => set("start_minimized", value)} />
           <Toggle label={t("settings.launchOnStartup")} checked={settings.launch_on_startup} onChange={(value) => set("launch_on_startup", value)} />
         </Panel>
@@ -627,7 +668,7 @@ function SettingsView({
           <Toggle label={t("settings.useTurbopack")} checked={settings.use_turbopack} onChange={(value) => set("use_turbopack", value)} />
           <Toggle label={t("settings.clearNext")} checked={settings.clear_next_before_start} onChange={(value) => set("clear_next_before_start", value)} />
           <Toggle label={t("settings.networkPreview")} checked={settings.enable_network_preview} onChange={(value) => set("enable_network_preview", value)} />
-          <Toggle label={t("settings.https")} checked={settings.enable_https} onChange={(value) => set("enable_https", value)} />
+          <Toggle label={`${t("settings.https")} (${t("status.inDevelopment")})`} checked={settings.enable_https} onChange={(value) => set("enable_https", value)} disabled />
           <NumberField label={t("settings.defaultNextPort")} value={settings.default_next_port} onChange={(value) => set("default_next_port", value)} />
         </Panel>
         <Panel title={t("settings.previewAdvanced")}>
@@ -638,9 +679,30 @@ function SettingsView({
           <Toggle label={t("settings.autoReloadPreview")} checked={settings.auto_reload_preview} onChange={(value) => set("auto_reload_preview", value)} />
           <Toggle label={t("settings.openExternalBrowser")} checked={settings.open_external_browser_on_start} onChange={(value) => set("open_external_browser_on_start", value)} />
           <Field label={t("settings.envVars")} value={settings.environment_variables} onChange={(value) => set("environment_variables", value)} />
-          <Field label={t("settings.proxyRules")} value={settings.proxy_rules} onChange={(value) => set("proxy_rules", value)} />
+          <Field label={`${t("settings.proxyRules")} (${t("status.inDevelopment")})`} value={settings.proxy_rules} onChange={(value) => set("proxy_rules", value)} disabled />
+          <Field label={`${t("settings.hosts")} (${t("status.inDevelopment")})`} value={settings.hosts} onChange={(value) => set("hosts", value)} disabled />
+          <Field label={`${t("settings.sslCertificates")} (${t("status.inDevelopment")})`} value={settings.ssl_certificates} onChange={(value) => set("ssl_certificates", value)} disabled />
         </Panel>
       </div>
+      <Panel title={t("settings.diagnostics")}>
+        <div className="toolbar">
+          <button onClick={() => void onRefreshDiagnostics()}><RefreshCcw size={16} /> {t("action.rerunDiagnostics")}</button>
+        </div>
+        <table>
+          <thead><tr><th>{t("table.name")}</th><th>{t("table.status")}</th><th>{t("table.version")}</th><th>{t("table.path")}</th><th>{t("table.error")}</th></tr></thead>
+          <tbody>
+            {diagnostics.map((item) => (
+              <tr key={`${item.name}-${item.path}`}>
+                <td>{item.name}</td>
+                <td><span className={`status ${item.status.toLowerCase()}`}>{item.status}</span></td>
+                <td><code>{item.version || "-"}</code></td>
+                <td><code>{item.path || "-"}</code></td>
+                <td>{item.error || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
       <button className="primary-save" onClick={() => void onSave()}>{t("action.saveSettings")}</button>
     </div>
   );
@@ -694,16 +756,16 @@ function LogList({ logs, t }: { logs: LogEntry[]; t: TFunction }) {
   return <div className="logs">{logs.map((log) => <div className={`log ${log.level}`} key={log.id}><span>{log.created_at}</span><strong>{log.level}</strong><p>{log.message}</p></div>)}</div>;
 }
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return <label className="field"><span>{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+function Field({ label, value, onChange, disabled = false }: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+  return <label className="field"><span>{label}</span><input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function NumberField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
   return <label className="field"><span>{label}</span><input type="number" value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
-  return <label className="toggle"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /> <span>{label}</span></label>;
+function Toggle({ label, checked, onChange, disabled = false }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
+  return <label className="toggle"><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /> <span>{label}</span></label>;
 }
 
 function templateName(template: TemplateInfo, t: TFunction) {

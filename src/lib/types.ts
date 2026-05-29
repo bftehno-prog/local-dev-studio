@@ -116,3 +116,11 @@ export interface TemplateInfo {
   built_in: boolean;
   path?: string;
 }
+
+export interface DiagnosticItem {
+  name: string;
+  status: "OK" | "Missing" | "Warning" | "Error";
+  version: string;
+  path: string;
+  error: string;
+}

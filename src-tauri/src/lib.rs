@@ -147,6 +147,15 @@ struct TemplateInfo {
     path: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct DiagnosticItem {
+    name: String,
+    status: String,
+    version: String,
+    path: String,
+    error: String,
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -176,6 +185,8 @@ pub fn run() {
             remove_project,
             start_project,
             stop_project,
+            start_all_projects,
+            stop_all_projects,
             open_path,
             open_in_code,
             open_external_url,
@@ -196,7 +207,8 @@ pub fn run() {
             delete_template,
             import_template_zip,
             export_template_zip,
-            detect_project_type
+            detect_project_type,
+            diagnostics
         ])
         .run(tauri::generate_context!())
         .expect("error while running Local Dev Studio");
@@ -365,6 +377,14 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                     let _ = window.set_focus();
                 }
             }
+            "start_all" => {
+                let state = app.state::<AppState>();
+                let _ = start_all_projects_inner(&state);
+            }
+            "stop_all" => {
+                let state = app.state::<AppState>();
+                let _ = stop_all_projects_inner(&state);
+            }
             "exit" => app.exit(0),
             _ => {}
         })
@@ -439,8 +459,74 @@ fn dashboard(state: State<AppState>) -> Result<DashboardData, String> {
 }
 
 #[tauri::command]
+fn diagnostics(state: State<AppState>) -> Result<Vec<DiagnosticItem>, String> {
+    let settings = get_settings(state.clone())?;
+    let mut items = Vec::new();
+    for (name, args) in [
+        ("node", vec!["-v"]),
+        ("npm", vec!["-v"]),
+        ("pnpm", vec!["-v"]),
+        ("yarn", vec!["-v"]),
+        ("bun", vec!["--version"]),
+        ("git", vec!["--version"]),
+        ("php", vec!["-v"]),
+        ("cargo", vec!["--version"]),
+    ] {
+        items.push(runtime_diagnostic(name, &settings, &args));
+    }
+    items.push(path_diagnostic("PATH", env::var("PATH").unwrap_or_default(), true));
+    items.push(path_diagnostic("Projects folder", settings.projects_folder.clone(), Path::new(&settings.projects_folder).is_dir()));
+    items.push(path_diagnostic("Sandboxes folder", settings.sandboxes_folder.clone(), Path::new(&settings.sandboxes_folder).is_dir()));
+    items.push(path_diagnostic("SQLite data", state.db_path.to_string_lossy().to_string(), state.db_path.exists()));
+    let data_parent = state.db_path.parent().map(|path| path.is_dir()).unwrap_or(false);
+    items.push(path_diagnostic("App data folder", state.db_path.parent().map(|path| path.to_string_lossy().to_string()).unwrap_or_default(), data_parent));
+    Ok(items)
+}
+
+fn runtime_diagnostic(name: &str, settings: &Settings, args: &[&str]) -> DiagnosticItem {
+    let program = resolve_runtime(name, settings);
+    match Command::new(&program).args(args).output() {
+        Ok(output) if output.status.success() => DiagnosticItem {
+            name: name.to_string(),
+            status: "OK".to_string(),
+            version: String::from_utf8_lossy(&output.stdout).lines().next().unwrap_or("Ready").to_string(),
+            path: program,
+            error: String::new(),
+        },
+        Ok(output) => DiagnosticItem {
+            name: name.to_string(),
+            status: "Warning".to_string(),
+            version: String::new(),
+            path: program,
+            error: String::from_utf8_lossy(&output.stderr).lines().next().unwrap_or("Command returned an error").to_string(),
+        },
+        Err(error) => DiagnosticItem {
+            name: name.to_string(),
+            status: "Missing".to_string(),
+            version: String::new(),
+            path: program,
+            error: error.to_string(),
+        },
+    }
+}
+
+fn path_diagnostic(name: &str, path: String, ok: bool) -> DiagnosticItem {
+    DiagnosticItem {
+        name: name.to_string(),
+        status: if ok { "OK" } else { "Warning" }.to_string(),
+        version: String::new(),
+        path,
+        error: if ok { String::new() } else { "Path is not available.".to_string() },
+    }
+}
+
+#[tauri::command]
 fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
-    let conn = connect(&state.db_path)?;
+    projects_from_db(&state.db_path)
+}
+
+fn projects_from_db(db_path: &Path) -> Result<Vec<Project>, String> {
+    let conn = connect(db_path)?;
     let mut stmt = conn
         .prepare(
             "SELECT id, name, path, project_type, port, command, status, use_turbopack, created_at, updated_at
@@ -456,12 +542,7 @@ fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
 #[tauri::command]
 fn add_project(path: String, state: State<AppState>) -> Result<Project, String> {
     let project_path = PathBuf::from(path.trim());
-    if !project_path.exists() {
-        return Err("Project folder does not exist. Check the path and try again.".to_string());
-    }
-    if !project_path.is_dir() {
-        return Err("Selected path is not a folder.".to_string());
-    }
+    validate_project_path(&project_path)?;
     let project_type = detect_project_type(project_path.to_string_lossy().to_string())?;
     let timestamp = now();
     let name = project_path
@@ -527,14 +608,24 @@ fn detect_project_type(path: String) -> Result<String, String> {
 
 #[tauri::command]
 fn start_project(id: String, state: State<AppState>) -> Result<Project, String> {
-    if state.processes.lock().map_err(|_| "Process lock failed")?.children.contains_key(&id) {
-        return get_project(&state.db_path, &id);
+    start_project_inner(&state, &id)
+}
+
+fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
+    if state.processes.lock().map_err(|_| "Process lock failed")?.children.contains_key(id) {
+        return get_project(&state.db_path, id);
     }
-    let mut project = get_project(&state.db_path, &id)?;
-    let settings = get_settings(state.clone())?;
+    let mut project = get_project(&state.db_path, id)?;
+    validate_project_path(Path::new(&project.path))?;
+    validate_project_type(&project.project_type)?;
+    let settings = read_settings_at(&state.db_path)?;
     let port = match project.port {
         Some(port) if is_port_free(port) => port,
-        _ => find_free_port(settings.port_start, settings.port_end)?,
+        Some(port) => {
+            insert_log(&state.db_path, Some(&project.id), "warning", &format!("Configured port {} is occupied. Selecting a free port.", port))?;
+            find_free_port(settings.port_start, settings.port_end)?
+        }
+        None => find_free_port(settings.port_start, settings.port_end)?,
     };
     if settings.clear_next_before_start && project.project_type == "next" {
         clear_cache_at(Path::new(&project.path))?;
@@ -544,11 +635,16 @@ fn start_project(id: String, state: State<AppState>) -> Result<Project, String> 
     upsert_project(&state.db_path, &project)?;
     let command_spec = build_command(&project, &settings, port)?;
     insert_log(&state.db_path, Some(&project.id), "server", &format!("Starting: {}", command_spec.display))?;
+    let env_vars = parse_environment_variables(&settings.environment_variables)?;
+    if !env_vars.is_empty() {
+        let keys = env_vars.iter().map(|(key, _)| key.as_str()).collect::<Vec<_>>().join(", ");
+        insert_log(&state.db_path, Some(&project.id), "server", &format!("Environment keys: {}", keys))?;
+    }
     let mut command = Command::new(&command_spec.program);
     command.args(&command_spec.args);
     command.current_dir(&project.path);
     command.env("PATH", runtime_path(&settings));
-    for (key, value) in parse_environment_variables(&settings.environment_variables)? {
+    for (key, value) in env_vars {
         command.env(key, value);
     }
     command.stdout(Stdio::piped());
@@ -584,7 +680,11 @@ fn start_project(id: String, state: State<AppState>) -> Result<Project, String> 
 
 #[tauri::command]
 fn stop_project(id: String, state: State<AppState>) -> Result<Project, String> {
-    let mut project = get_project(&state.db_path, &id)?;
+    stop_project_inner(&state, &id)
+}
+
+fn stop_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
+    let mut project = get_project(&state.db_path, id)?;
     project.status = "stopping".to_string();
     upsert_project(&state.db_path, &project)?;
     if let Some(mut child) = state
@@ -592,11 +692,11 @@ fn stop_project(id: String, state: State<AppState>) -> Result<Project, String> {
         .lock()
         .map_err(|_| "Process lock failed")?
         .children
-        .remove(&id)
+        .remove(id)
     {
         let _ = child.kill();
         let _ = child.wait();
-    } else if let Some(pid) = stored_pid(&state.db_path, &id)? {
+    } else if let Some(pid) = stored_pid(&state.db_path, id)? {
         kill_process_tree(pid);
     }
     let conn = connect(&state.db_path)?;
@@ -607,6 +707,52 @@ fn stop_project(id: String, state: State<AppState>) -> Result<Project, String> {
     upsert_project(&state.db_path, &project)?;
     insert_log(&state.db_path, Some(&project.id), "server", "Project stopped")?;
     Ok(project)
+}
+
+#[tauri::command]
+fn start_all_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
+    start_all_projects_inner(&state)
+}
+
+fn start_all_projects_inner(state: &AppState) -> Result<Vec<Project>, String> {
+    insert_log(&state.db_path, None, "server", "Start All requested")?;
+    let projects = projects_from_db(&state.db_path)?;
+    let mut started = Vec::new();
+    for project in projects {
+        if matches!(project.status.as_str(), "running" | "starting") {
+            continue;
+        }
+        match start_project_inner(state, &project.id) {
+            Ok(project) => started.push(project),
+            Err(error) => {
+                let _ = insert_log(&state.db_path, Some(&project.id), "error", &format!("Start All failed: {}", user_error(&error)));
+            }
+        }
+    }
+    Ok(started)
+}
+
+#[tauri::command]
+fn stop_all_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
+    stop_all_projects_inner(&state)
+}
+
+fn stop_all_projects_inner(state: &AppState) -> Result<Vec<Project>, String> {
+    insert_log(&state.db_path, None, "server", "Stop All requested")?;
+    let projects = projects_from_db(&state.db_path)?;
+    let mut stopped = Vec::new();
+    for project in projects {
+        if matches!(project.status.as_str(), "stopped" | "idle") {
+            continue;
+        }
+        match stop_project_inner(state, &project.id) {
+            Ok(project) => stopped.push(project),
+            Err(error) => {
+                let _ = insert_log(&state.db_path, Some(&project.id), "error", &format!("Stop All failed: {}", user_error(&error)));
+            }
+        }
+    }
+    Ok(stopped)
 }
 
 #[tauri::command]
@@ -937,8 +1083,14 @@ fn delete_template(template_id: String, state: State<AppState>) -> Result<(), St
 #[tauri::command]
 fn import_template_zip(zip_path: String, state: State<AppState>) -> Result<TemplateInfo, String> {
     let source = PathBuf::from(zip_path.trim());
+    if source.extension().and_then(|value| value.to_str()).map(|value| value.eq_ignore_ascii_case("zip")) != Some(true) {
+        return Err("Selected file must be a .zip archive.".to_string());
+    }
     if !source.exists() {
         return Err("ZIP file was not found.".to_string());
+    }
+    if !source.is_file() {
+        return Err("Selected ZIP path is not a file.".to_string());
     }
     let templates_root = default_data_dir().join("templates");
     fs::create_dir_all(&templates_root).map_err(|error| error.to_string())?;
@@ -1266,6 +1418,37 @@ fn ensure_file(path: PathBuf, message: &str) -> Result<(), String> {
     }
 }
 
+fn validate_project_path(path: &Path) -> Result<(), String> {
+    if path.as_os_str().is_empty() {
+        return Err("Project path is empty.".to_string());
+    }
+    let raw = path.to_string_lossy();
+    if raw.contains('\0') {
+        return Err("Project path contains invalid characters.".to_string());
+    }
+    if !path.exists() {
+        return Err("Project folder does not exist. Check the path and try again.".to_string());
+    }
+    if !path.is_dir() {
+        return Err("Selected path is not a folder.".to_string());
+    }
+    path.canonicalize()
+        .map_err(|error| format!("Cannot resolve project path: {}", error))?;
+    Ok(())
+}
+
+fn validate_project_type(project_type: &str) -> Result<(), String> {
+    if matches!(project_type, "next" | "vite" | "astro" | "php" | "static") {
+        Ok(())
+    } else {
+        Err("Unsupported project type. Supported types: next, vite, astro, php, static.".to_string())
+    }
+}
+
+fn user_error(error: &str) -> String {
+    error.lines().next().unwrap_or(error).to_string()
+}
+
 fn now() -> String {
     Utc::now().to_rfc3339()
 }
@@ -1308,10 +1491,14 @@ fn parse_environment_variables(raw: &str) -> Result<Vec<(String, String)>, Strin
             return Err(format!("Invalid environment variable on line {}. Use KEY=value.", index + 1));
         };
         let key = key.trim();
-        if key.is_empty() || key.contains(' ') {
+        if key.is_empty() || key.contains(' ') || key.chars().any(|ch| ch.is_control()) {
             return Err(format!("Invalid environment variable name on line {}.", index + 1));
         }
-        vars.push((key.to_string(), value.trim().to_string()));
+        let value = value.trim();
+        if value.chars().any(|ch| ch.is_control() && ch != '\t') {
+            return Err(format!("Invalid environment variable value on line {}.", index + 1));
+        }
+        vars.push((key.to_string(), value.to_string()));
     }
     Ok(vars)
 }
@@ -1532,4 +1719,63 @@ fn extract_zip(source: &Path, target: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_project(name: &str) -> PathBuf {
+        let root = env::temp_dir().join(format!("local-dev-studio-test-{}-{}", name, Uuid::new_v4().simple()));
+        fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn parse_environment_variables_accepts_key_value_lines() {
+        let vars = parse_environment_variables("NEXT_PUBLIC_API=http://localhost:3000\n# comment\nPORT=3000").unwrap();
+        assert_eq!(vars[0], ("NEXT_PUBLIC_API".to_string(), "http://localhost:3000".to_string()));
+        assert_eq!(vars[1], ("PORT".to_string(), "3000".to_string()));
+    }
+
+    #[test]
+    fn parse_environment_variables_rejects_invalid_lines() {
+        assert!(parse_environment_variables("NO_VALUE").is_err());
+        assert!(parse_environment_variables("BAD KEY=value").is_err());
+    }
+
+    #[test]
+    fn validate_project_path_requires_existing_directory() {
+        let root = temp_project("path");
+        validate_project_path(&root).unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        assert!(validate_project_path(&root).is_err());
+    }
+
+    #[test]
+    fn detect_project_type_detects_next_and_static() {
+        let next = temp_project("next");
+        fs::write(next.join("package.json"), r#"{"dependencies":{"next":"latest"}}"#).unwrap();
+        assert_eq!(detect_project_type(next.to_string_lossy().to_string()).unwrap(), "next");
+        fs::remove_dir_all(next).unwrap();
+
+        let static_site = temp_project("static");
+        fs::write(static_site.join("index.html"), "<h1>Static</h1>").unwrap();
+        assert_eq!(detect_project_type(static_site.to_string_lossy().to_string()).unwrap(), "static");
+        fs::remove_dir_all(static_site).unwrap();
+    }
+
+    #[test]
+    fn find_free_port_returns_available_port() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let occupied = listener.local_addr().unwrap().port();
+        let port = find_free_port(occupied.saturating_add(1), occupied.saturating_add(20)).unwrap();
+        assert!(port > occupied);
+    }
+
+    #[test]
+    fn validate_project_type_rejects_unknown() {
+        assert!(validate_project_type("next").is_ok());
+        assert!(validate_project_type("unknown").is_err());
+    }
 }

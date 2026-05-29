@@ -324,6 +324,19 @@ tr.selected {
   padding: 12px;
 }
 
+.drop-zone {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  margin-bottom: 10px;
+  padding: 12px;
+  font-size: 13px;
+}
+
 .template-card span {
   color: var(--muted);
   font-size: 12px;
@@ -449,9 +462,27 @@ tr.selected {
 }
 
 .preview-frame-scale {
+  position: relative;
   flex: 0 0 auto;
   min-height: 620px;
   transform-origin: top center;
+}
+
+.preview-state {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 1;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.preview-state.error {
+  color: var(--err);
 }
 
 iframe {

@@ -7,6 +7,7 @@ import type {
   ProjectType,
   ServerProcess,
   Settings,
+  DiagnosticItem,
   TemplateInfo
 } from "./types";
 
@@ -17,6 +18,8 @@ export const api = {
   removeProject: (id: string) => invoke<void>("remove_project", { id }),
   startProject: (id: string) => invoke<Project>("start_project", { id }),
   stopProject: (id: string) => invoke<Project>("stop_project", { id }),
+  startAllProjects: () => invoke<Project[]>("start_all_projects"),
+  stopAllProjects: () => invoke<Project[]>("stop_all_projects"),
   restartProject: async (id: string) => {
     await invoke<Project>("stop_project", { id });
     return invoke<Project>("start_project", { id });
@@ -43,5 +46,6 @@ export const api = {
   deleteTemplate: (templateId: string) => invoke<void>("delete_template", { templateId }),
   importTemplateZip: (zipPath: string) => invoke<TemplateInfo>("import_template_zip", { zipPath }),
   exportTemplateZip: (templateId: string) => invoke<string>("export_template_zip", { templateId }),
-  detectProjectType: (path: string) => invoke<ProjectType>("detect_project_type", { path })
+  detectProjectType: (path: string) => invoke<ProjectType>("detect_project_type", { path }),
+  diagnostics: () => invoke<DiagnosticItem[]>("diagnostics")
 };
