@@ -2,6 +2,7 @@ import {
   Activity,
   AppWindow,
   Boxes,
+  ClipboardCheck,
   Folder,
   Gauge,
   Globe2,
@@ -17,6 +18,7 @@ export const sections = [
   ['servers', 'nav.servers', Activity],
   ['ports', 'nav.ports', Globe2],
   ['logs', 'nav.logs', Terminal],
+  ['diagnostics', 'nav.diagnostics', ClipboardCheck],
   ['settings', 'nav.settings', SettingsIcon],
 ] as const;
 

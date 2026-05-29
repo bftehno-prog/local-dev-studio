@@ -4,6 +4,7 @@ import type {
   LogEntry,
   PortInfo,
   Project,
+  ProjectDoctorReport,
   ProjectType,
   ServerProcess,
   Settings,
@@ -51,5 +52,6 @@ export const api = {
   detectProjectType: (path: string) => invoke<ProjectType>('detect_project_type', { path }),
   checkRuntime: (name: string) => invoke<RuntimeInfo>('check_runtime', { name }),
   checkAllRuntimes: () => invoke<RuntimeInfo[]>('check_all_runtimes'),
+  projectDoctor: (id: string) => invoke<ProjectDoctorReport>('project_doctor', { id }),
   diagnostics: () => invoke<DiagnosticItem[]>('diagnostics'),
 };

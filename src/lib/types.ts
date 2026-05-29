@@ -134,3 +134,15 @@ export interface RuntimeInfo {
   last_checked_at: string;
   error?: string;
 }
+
+export interface ProjectDoctorCheck {
+  label: string;
+  status: 'ok' | 'warning' | 'error';
+  message: string;
+}
+
+export interface ProjectDoctorReport {
+  project_id: string;
+  project_name: string;
+  checks: ProjectDoctorCheck[];
+}

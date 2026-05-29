@@ -24,6 +24,7 @@ import type {
   LogEntry,
   PortInfo,
   Project,
+  ProjectDoctorReport,
   RuntimeInfo,
   ServerProcess,
   Settings,
@@ -54,6 +55,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(emptySettings);
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
+  const [doctorReport, setDoctorReport] = useState<ProjectDoctorReport | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>();
   const [previewUrl, setPreviewUrl] = useState('');
   const [manualPreviewUrl, setManualPreviewUrl] = useState('');
@@ -99,7 +101,9 @@ export default function App() {
     if (active === 'projects') tasks.push(loadProjects());
     if (active === 'logs') tasks.push(loadLogs());
     if (active === 'templates' || active === 'sandboxes') tasks.push(loadTemplates());
-    if (active === 'settings') tasks.push(loadSettings(), loadDiagnostics(), loadRuntimes());
+    if (active === 'settings' || active === 'diagnostics') {
+      tasks.push(loadSettings(), loadDiagnostics(), loadRuntimes());
+    }
     await Promise.all(tasks);
   }, [
     active,
@@ -134,7 +138,7 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    if (active === 'settings') {
+    if (active === 'settings' || active === 'diagnostics') {
       void loadDiagnostics().catch(showError);
       void loadRuntimes().catch(showError);
     }
@@ -202,6 +206,28 @@ export default function App() {
 
   async function refreshRuntimes() {
     await run(loadRuntimes, t('message.runtimesRefreshed'));
+  }
+
+  async function copyDiagnosticsReport() {
+    const report = [
+      '# Local Dev Studio Diagnostics',
+      '',
+      `Generated: ${new Date().toISOString()}`,
+      '',
+      '## Runtimes',
+      ...runtimes.map(
+        (runtime) =>
+          `- ${runtime.name}: ${runtime.found ? 'OK' : 'Missing'} | ${runtime.version || '-'} | ${runtime.source} | ${runtime.path || '-'}`,
+      ),
+      '',
+      '## Diagnostics',
+      ...diagnostics.map(
+        (item) =>
+          `- ${item.name}: ${item.status} | ${item.version || '-'} | ${item.path || '-'} | ${item.error || '-'}`,
+      ),
+    ].join('\n');
+    await navigator.clipboard.writeText(report);
+    setMessage(t('diagnostics.reportCopied'));
   }
 
   const previewWidth = useMemo(() => {
@@ -286,8 +312,10 @@ export default function App() {
         {active === 'projects' && (
           <ProjectsView
             projects={projects}
+            doctorReport={doctorReport}
             selectedProjectId={selectedProjectId}
             onSelect={setSelectedProjectId}
+            onDoctor={setDoctorReport}
             onRun={run}
             t={t}
           />
@@ -304,6 +332,16 @@ export default function App() {
             onLevel={setLogLevel}
             onSearch={setLogSearch}
             onRun={run}
+            t={t}
+          />
+        )}
+        {active === 'diagnostics' && (
+          <DiagnosticsView
+            diagnostics={diagnostics}
+            runtimes={runtimes}
+            onRefresh={() => void Promise.all([refreshDiagnostics(), refreshRuntimes()])}
+            onCopyReport={() => void copyDiagnosticsReport().catch(showError)}
+            onOpenLogs={() => setActive('logs')}
             t={t}
           />
         )}
@@ -408,14 +446,18 @@ function DashboardView({
 
 function ProjectsView({
   projects,
+  doctorReport,
   selectedProjectId,
   onSelect,
+  onDoctor,
   onRun,
   t,
 }: {
   projects: Project[];
+  doctorReport: ProjectDoctorReport | null;
   selectedProjectId?: string;
   onSelect: (id: string) => void;
+  onDoctor: (report: ProjectDoctorReport) => void;
   onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
   t: TFunction;
 }) {
@@ -522,6 +564,16 @@ function ProjectsView({
                   </button>
                   <button
                     onClick={() =>
+                      onRun(
+                        async () => onDoctor(await api.projectDoctor(project.id)),
+                        t('message.doctorReady'),
+                      )
+                    }
+                  >
+                    {t('action.runDoctor')}
+                  </button>
+                  <button
+                    onClick={() =>
                       onRun(() => api.removeProject(project.id), t('message.projectRemoved'))
                     }
                   >
@@ -533,6 +585,23 @@ function ProjectsView({
           </tbody>
         </table>
       </Panel>
+      {doctorReport && (
+        <Panel title={`${t('projects.doctor')}: ${doctorReport.project_name}`}>
+          <div className="logs">
+            {doctorReport.checks.map((check) => (
+              <div
+                className={`log ${check.status === 'ok' ? 'info' : 'warning'}`}
+                key={check.label}
+              >
+                <strong>{check.status === 'ok' ? 'OK' : 'WARN'}</strong>
+                <p>
+                  {check.label}: {check.message}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }
@@ -830,6 +899,121 @@ function LogsView({
           </button>
         </div>
         <LogList logs={logs} t={t} />
+      </Panel>
+    </div>
+  );
+}
+
+function DiagnosticsView({
+  diagnostics,
+  runtimes,
+  onRefresh,
+  onCopyReport,
+  onOpenLogs,
+  t,
+}: {
+  diagnostics: DiagnosticItem[];
+  runtimes: RuntimeInfo[];
+  onRefresh: () => void;
+  onCopyReport: () => void;
+  onOpenLogs: () => void;
+  t: TFunction;
+}) {
+  return (
+    <div className="content">
+      <Panel title={t('nav.diagnostics')}>
+        <div className="toolbar">
+          <button onClick={onRefresh}>
+            <RefreshCcw size={16} /> {t('action.rerunDiagnostics')}
+          </button>
+          <button onClick={onCopyReport}>{t('action.copyReport')}</button>
+          <button onClick={onOpenLogs}>{t('nav.logs')}</button>
+        </div>
+        <div className="metrics">
+          <Metric
+            label={t('settings.runtimeHealth')}
+            value={`${runtimes.filter((runtime) => runtime.found).length}/${runtimes.length}`}
+          />
+          <Metric
+            label={t('table.error')}
+            value={
+              diagnostics.filter((item) => item.status === 'Error' || item.status === 'Missing')
+                .length
+            }
+          />
+          <Metric
+            label="SQLite"
+            value={diagnostics.find((item) => item.name === 'SQLite data')?.status ?? '-'}
+          />
+          <Metric
+            label="PATH"
+            value={diagnostics.find((item) => item.name === 'PATH')?.status ?? '-'}
+          />
+        </div>
+      </Panel>
+      <Panel title={t('settings.runtimeHealth')}>
+        <table>
+          <thead>
+            <tr>
+              <th>{t('table.runtime')}</th>
+              <th>{t('table.status')}</th>
+              <th>{t('table.version')}</th>
+              <th>{t('settings.source')}</th>
+              <th>{t('table.path')}</th>
+              <th>{t('table.error')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {runtimes.map((runtime) => (
+              <tr key={runtime.name}>
+                <td>{runtime.name}</td>
+                <td>
+                  <span className={`status ${runtime.found ? 'running' : 'error'}`}>
+                    {runtime.found ? 'OK' : t('empty.notFound')}
+                  </span>
+                </td>
+                <td>
+                  <code>{runtime.version || '-'}</code>
+                </td>
+                <td>{runtime.source}</td>
+                <td>
+                  <code>{runtime.path || '-'}</code>
+                </td>
+                <td>{runtime.error || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
+      <Panel title={t('settings.diagnostics')}>
+        <table>
+          <thead>
+            <tr>
+              <th>{t('table.name')}</th>
+              <th>{t('table.status')}</th>
+              <th>{t('table.version')}</th>
+              <th>{t('table.path')}</th>
+              <th>{t('table.error')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {diagnostics.map((item) => (
+              <tr key={`${item.name}-${item.path}`}>
+                <td>{item.name}</td>
+                <td>
+                  <span className={`status ${item.status.toLowerCase()}`}>{item.status}</span>
+                </td>
+                <td>
+                  <code>{item.version || '-'}</code>
+                </td>
+                <td>
+                  <code>{item.path || '-'}</code>
+                </td>
+                <td>{item.error || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </Panel>
     </div>
   );

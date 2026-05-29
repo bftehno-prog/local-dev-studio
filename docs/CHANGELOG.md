@@ -16,6 +16,8 @@
 - Frontend shared API, hooks, preview and reusable data-view modules.
 - Rust `state`, `security` and `utils` modules.
 - Runtime manager commands and Settings runtime health table.
+- Dedicated Diagnostics page with copyable issue report.
+- Project Doctor command and Projects page action.
 
 ### Changed
 
@@ -27,6 +29,7 @@
 - Settings are grouped into tabs without changing the visual language.
 - CI and release workflows now run format/lint/clippy gates; tagged releases publish installers with checksums.
 - Runtime diagnostics now expose source, path, version and last checked timestamp for supported tools.
+- Projects can now run a basic doctor check for path, type, runtime, dev script and entrypoint readiness.
 
 ### Fixed
 

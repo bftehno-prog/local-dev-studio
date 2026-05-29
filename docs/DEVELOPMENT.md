@@ -32,6 +32,7 @@ cargo test
 - `src/components/ui/` contains shared UI primitives.
 - `src-tauri/src/` contains Rust commands, state, security validation, utilities, migrations and process logic.
 - Runtime checks are exposed through `check_runtime` and `check_all_runtimes`.
+- Project readiness checks are exposed through `project_doctor`.
 - `docs/` contains Markdown docs.
 - `docs-site/` contains static HTML documentation.
 
