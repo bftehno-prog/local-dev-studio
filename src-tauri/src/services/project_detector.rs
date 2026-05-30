@@ -32,6 +32,9 @@ pub(crate) fn detect_project_type_at(root: &Path) -> Result<String, String> {
     {
         return Ok("static".to_string());
     }
+    if package_json.is_file() && package_json_has_script(&package_json, "dev") {
+        return Ok("node".to_string());
+    }
     Ok("unknown".to_string())
 }
 

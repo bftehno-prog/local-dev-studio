@@ -9,12 +9,42 @@ pub(crate) struct Project {
     pub(crate) port: Option<u16>,
     pub(crate) command: Option<String>,
     pub(crate) status: String,
+    pub(crate) package_manager: Option<String>,
+    pub(crate) use_docker: bool,
+    pub(crate) dev_port: Option<u16>,
+    pub(crate) proxy_port: Option<u16>,
+    pub(crate) last_started_at: Option<String>,
+    pub(crate) last_error: Option<String>,
     pub(crate) use_turbopack: bool,
     pub(crate) trusted: bool,
     pub(crate) trusted_at: Option<String>,
     pub(crate) trusted_runtime: Option<String>,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct CreateProjectRequest {
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) project_type: String,
+    pub(crate) package_manager: Option<String>,
+    #[serde(default)]
+    pub(crate) auto_install: bool,
+    #[serde(default)]
+    pub(crate) auto_start: bool,
+    #[serde(default)]
+    pub(crate) use_docker: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct UpdateProjectRequest {
+    pub(crate) id: String,
+    pub(crate) name: Option<String>,
+    pub(crate) package_manager: Option<String>,
+    pub(crate) use_docker: Option<bool>,
+    pub(crate) dev_port: Option<u16>,
+    pub(crate) proxy_port: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize)]

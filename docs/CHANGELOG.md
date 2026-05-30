@@ -38,6 +38,7 @@
 - Rust project cache service module.
 - Rust models module with project, settings, log and process DTOs.
 - SQLite storage migration for terminal sessions, recent files and future preview/Docker project metadata.
+- Backend project wizard commands for create/import/get/update/delete project flows.
 
 ### Changed
 
@@ -69,6 +70,7 @@
 - Project launch command construction and environment parsing moved out of `src-tauri/src/lib.rs`.
 - Project cache cleanup moved out of `src-tauri/src/lib.rs`.
 - Shared Rust data models moved out of `src-tauri/src/lib.rs`.
+- Project records now carry package manager, Docker, dev/proxy port and last-run metadata.
 
 ### Fixed
 

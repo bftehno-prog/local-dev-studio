@@ -1,4 +1,4 @@
-export type ProjectType = 'next' | 'vite' | 'astro' | 'static' | 'php' | 'unknown';
+export type ProjectType = 'next' | 'vite' | 'astro' | 'static' | 'node' | 'php' | 'unknown';
 export type ProjectStatus =
   | 'idle'
   | 'starting'
@@ -17,12 +17,37 @@ export interface Project {
   port?: number;
   command?: string;
   status: ProjectStatus;
+  package_manager?: string;
+  use_docker: boolean;
+  dev_port?: number;
+  proxy_port?: number;
+  last_started_at?: string;
+  last_error?: string;
   use_turbopack: boolean;
   trusted: boolean;
   trusted_at?: string;
   trusted_runtime?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  path: string;
+  project_type: string;
+  package_manager?: string;
+  auto_install?: boolean;
+  auto_start?: boolean;
+  use_docker?: boolean;
+}
+
+export interface UpdateProjectRequest {
+  id: string;
+  name?: string;
+  package_manager?: string;
+  use_docker?: boolean;
+  dev_port?: number;
+  proxy_port?: number;
 }
 
 export interface ServerProcess {

@@ -1,6 +1,7 @@
 use std::path::{Component, Path};
 
-const ALLOWED_PROJECT_TYPES: &[&str] = &["next", "vite", "astro", "php", "static"];
+const ALLOWED_PROJECT_TYPES: &[&str] =
+    &["next", "vite", "astro", "php", "static", "node", "unknown"];
 const ALLOWED_PACKAGE_MANAGERS: &[&str] = &["npm", "pnpm", "yarn", "bun"];
 
 pub(crate) fn validate_project_path(path: &Path) -> Result<(), String> {
@@ -35,7 +36,7 @@ pub(crate) fn validate_project_type(project_type: &str) -> Result<(), String> {
         Ok(())
     } else {
         Err(
-            "Unsupported project type. Supported types: next, vite, astro, php, static."
+            "Unsupported project type. Supported types: next, vite, astro, php, static, node, unknown."
                 .to_string(),
         )
     }

@@ -21,7 +21,7 @@ pub(crate) fn build_command(
                 &Path::new(&project.path).join("package.json"),
                 "package.json not found. Next.js projects must have package.json in the root.",
             )?;
-            let package_manager = package_manager(settings);
+            let package_manager = project_package_manager(project, settings);
             let program = resolve_runtime(package_manager.as_str(), settings);
             let mut args = package_runner_args(package_manager.as_str(), "next", &["dev"]);
             if project.use_turbopack || settings.use_turbopack {
@@ -39,11 +39,11 @@ pub(crate) fn build_command(
                 args,
             })
         }
-        "vite" | "astro" => {
+        "vite" | "astro" | "node" => {
             let package_json = Path::new(&project.path).join("package.json");
             ensure_required_file(
                 &package_json,
-                "package.json not found. Vite/Astro projects must have package.json in the root.",
+                "package.json not found. Vite/Astro/Node projects must have package.json in the root.",
             )?;
             if !package_json_has_script(&package_json, "dev") {
                 return Err(
@@ -51,7 +51,7 @@ pub(crate) fn build_command(
                         .to_string(),
                 );
             }
-            let package_manager = package_manager(settings);
+            let package_manager = project_package_manager(project, settings);
             let program = resolve_runtime(package_manager.as_str(), settings);
             let mut args = package_dev_args(package_manager.as_str());
             args.extend(
@@ -104,6 +104,15 @@ pub(crate) fn package_manager(settings: &Settings) -> String {
         "bun" => "bun".to_string(),
         _ => "pnpm".to_string(),
     }
+}
+
+fn project_package_manager(project: &Project, settings: &Settings) -> String {
+    project
+        .package_manager
+        .as_deref()
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| matches!(value.as_str(), "npm" | "pnpm" | "yarn" | "bun"))
+        .unwrap_or_else(|| package_manager(settings))
 }
 
 pub(crate) fn parse_environment_variables(raw: &str) -> Result<Vec<(String, String)>, String> {

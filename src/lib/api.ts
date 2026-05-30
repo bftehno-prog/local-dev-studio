@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import type {
   DashboardData,
+  CreateProjectRequest,
   LogEntry,
   PortInfo,
   Project,
@@ -12,11 +13,17 @@ import type {
   DiagnosticItem,
   RuntimeInfo,
   TemplateInfo,
+  UpdateProjectRequest,
 } from './types';
 
 export const api = {
   dashboard: () => invoke<DashboardData>('dashboard'),
   listProjects: () => invoke<Project[]>('list_projects'),
+  getProject: (id: string) => invoke<Project>('get_project', { id }),
+  createProject: (request: CreateProjectRequest) => invoke<Project>('create_project', { request }),
+  importProject: (path: string) => invoke<Project>('import_project', { path }),
+  updateProject: (request: UpdateProjectRequest) => invoke<Project>('update_project', { request }),
+  deleteProject: (id: string) => invoke<void>('delete_project', { id }),
   addProject: (path: string) => invoke<Project>('add_project', { path }),
   removeProject: (id: string) => invoke<void>('remove_project', { id }),
   startProject: (id: string) => invoke<Project>('start_project', { id }),

@@ -25,9 +25,9 @@ mod state;
 mod utils;
 
 use models::{
-    default_language, DashboardData, DiagnosticItem, HostingCompatibilityReport, LogEntry,
-    PortInfo, Project, ProjectDoctorReport, RuntimeInfo, ServerProcess, Settings, TemplateInfo,
-    TemplateManifest,
+    default_language, CreateProjectRequest, DashboardData, DiagnosticItem,
+    HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport, RuntimeInfo,
+    ServerProcess, Settings, TemplateInfo, TemplateManifest, UpdateProjectRequest,
 };
 use security::validation::{
     is_allowed_project_type, validate_package_manager, validate_project_path, validate_project_type,
@@ -72,6 +72,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             dashboard,
             list_projects,
+            get_project,
+            create_project,
+            import_project,
+            update_project,
+            delete_project,
             add_project,
             remove_project,
             start_project,
@@ -563,11 +568,16 @@ fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
     projects_from_db(&state.db_path)
 }
 
+#[tauri::command]
+fn get_project(id: String, state: State<AppState>) -> Result<Project, String> {
+    project_by_id(&state.db_path, &id)
+}
+
 fn projects_from_db(db_path: &Path) -> Result<Vec<Project>, String> {
     let conn = connect(db_path)?;
     let mut stmt = conn
         .prepare(
-            "SELECT id, name, path, project_type, port, command, status, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at
+            "SELECT id, name, path, project_type, port, command, status, package_manager, use_docker, dev_port, proxy_port, last_started_at, last_error, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at
              FROM projects ORDER BY updated_at DESC",
         )
         .map_err(|error| error.to_string())?;
@@ -597,6 +607,12 @@ fn add_project(path: String, state: State<AppState>) -> Result<Project, String> 
         port: None,
         command: None,
         status: "stopped".to_string(),
+        package_manager: None,
+        use_docker: false,
+        dev_port: None,
+        proxy_port: None,
+        last_started_at: None,
+        last_error: None,
         use_turbopack: false,
         trusted: false,
         trusted_at: None,
@@ -610,6 +626,143 @@ fn add_project(path: String, state: State<AppState>) -> Result<Project, String> 
 }
 
 #[tauri::command]
+fn import_project(path: String, state: State<AppState>) -> Result<Project, String> {
+    add_project(path, state)
+}
+
+#[tauri::command]
+fn create_project(
+    request: CreateProjectRequest,
+    state: State<AppState>,
+) -> Result<Project, String> {
+    let name = request.name.trim();
+    if name.is_empty() {
+        return Err("Project name is required.".to_string());
+    }
+    let project_type = normalize_created_project_type(&request.project_type)?;
+    let package_manager = request
+        .package_manager
+        .as_deref()
+        .map(|value| value.trim().to_lowercase())
+        .filter(|value| !value.is_empty());
+    if let Some(manager) = &package_manager {
+        validate_package_manager(manager)?;
+    }
+    let base = PathBuf::from(request.path.trim());
+    if base.as_os_str().is_empty() {
+        return Err("Project path is required.".to_string());
+    }
+    let target = if base.exists() && base.is_dir() {
+        unique_path(&base, &safe_project_folder_name(name))
+    } else {
+        base
+    };
+    if let Some(parent) = target.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+    if target
+        .read_dir()
+        .map_err(|error| error.to_string())?
+        .next()
+        .is_some()
+    {
+        return Err("Target project folder is not empty.".to_string());
+    }
+    write_project_wizard_template(&request.project_type, &project_type, name, &target)?;
+    validate_project_path(&target)?;
+    let timestamp = now();
+    let project = Project {
+        id: format!("project_{}", Uuid::new_v4().simple()),
+        name: name.to_string(),
+        path: target.to_string_lossy().to_string(),
+        project_type,
+        port: None,
+        command: None,
+        status: "stopped".to_string(),
+        package_manager,
+        use_docker: request.use_docker,
+        dev_port: None,
+        proxy_port: None,
+        last_started_at: None,
+        last_error: None,
+        use_turbopack: false,
+        trusted: true,
+        trusted_at: Some(timestamp.clone()),
+        trusted_runtime: None,
+        created_at: timestamp.clone(),
+        updated_at: timestamp,
+    };
+    upsert_project(&state.db_path, &project)?;
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "info",
+        "Project created from wizard",
+    )?;
+    if request.auto_install
+        && matches!(
+            project.project_type.as_str(),
+            "next" | "vite" | "astro" | "node"
+        )
+    {
+        return install_project_dependencies(project.id.clone(), state);
+    }
+    if request.auto_start {
+        return start_project(project.id.clone(), state);
+    }
+    Ok(project)
+}
+
+#[tauri::command]
+fn update_project(
+    request: UpdateProjectRequest,
+    state: State<AppState>,
+) -> Result<Project, String> {
+    let mut project = project_by_id(&state.db_path, &request.id)?;
+    if let Some(name) = request.name {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Project name is required.".to_string());
+        }
+        project.name = name.to_string();
+    }
+    if let Some(package_manager) = request.package_manager {
+        let package_manager = package_manager.trim().to_lowercase();
+        if package_manager.is_empty() {
+            project.package_manager = None;
+        } else {
+            validate_package_manager(&package_manager)?;
+            project.package_manager = Some(package_manager);
+        }
+    }
+    if let Some(use_docker) = request.use_docker {
+        project.use_docker = use_docker;
+    }
+    if request.dev_port.is_some() {
+        project.dev_port = request.dev_port;
+        project.port = request.dev_port;
+    }
+    if request.proxy_port.is_some() {
+        project.proxy_port = request.proxy_port;
+    }
+    project.updated_at = now();
+    upsert_project(&state.db_path, &project)?;
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "info",
+        "Project settings updated",
+    )?;
+    Ok(project)
+}
+
+#[tauri::command]
+fn delete_project(id: String, state: State<AppState>) -> Result<(), String> {
+    remove_project(id, state)
+}
+
+#[tauri::command]
 fn remove_project(id: String, state: State<AppState>) -> Result<(), String> {
     let _ = stop_project(id.clone(), state.clone());
     let conn = connect(&state.db_path)?;
@@ -620,7 +773,7 @@ fn remove_project(id: String, state: State<AppState>) -> Result<(), String> {
 
 #[tauri::command]
 fn trust_project(id: String, state: State<AppState>) -> Result<Project, String> {
-    let mut project = get_project(&state.db_path, &id)?;
+    let mut project = project_by_id(&state.db_path, &id)?;
     let settings = read_settings_at(&state.db_path)?;
     project.trusted = true;
     project.trusted_at = Some(now());
@@ -638,7 +791,7 @@ fn trust_project(id: String, state: State<AppState>) -> Result<Project, String> 
 
 #[tauri::command]
 fn reset_project_trust(id: String, state: State<AppState>) -> Result<Project, String> {
-    let mut project = get_project(&state.db_path, &id)?;
+    let mut project = project_by_id(&state.db_path, &id)?;
     project.trusted = false;
     project.trusted_at = None;
     project.trusted_runtime = None;
@@ -655,7 +808,7 @@ fn reset_project_trust(id: String, state: State<AppState>) -> Result<Project, St
 
 #[tauri::command]
 fn project_doctor(id: String, state: State<AppState>) -> Result<ProjectDoctorReport, String> {
-    let project = get_project(&state.db_path, &id)?;
+    let project = project_by_id(&state.db_path, &id)?;
     let settings = read_settings_at(&state.db_path)?;
     Ok(build_project_doctor_report(
         &project,
@@ -669,7 +822,7 @@ fn hosting_compatibility_check(
     id: String,
     state: State<AppState>,
 ) -> Result<HostingCompatibilityReport, String> {
-    let project = get_project(&state.db_path, &id)?;
+    let project = project_by_id(&state.db_path, &id)?;
     validate_project_path(Path::new(&project.path))?;
     build_hosting_compatibility_report(&project)
 }
@@ -693,9 +846,9 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
         .children
         .contains_key(id)
     {
-        return get_project(&state.db_path, id);
+        return project_by_id(&state.db_path, id);
     }
-    let mut project = get_project(&state.db_path, id)?;
+    let mut project = project_by_id(&state.db_path, id)?;
     validate_project_path(Path::new(&project.path))?;
     validate_project_type(&project.project_type)?;
     let settings = read_settings_at(&state.db_path)?;
@@ -727,6 +880,8 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
     }
     project.status = "starting".to_string();
     project.port = Some(port);
+    project.dev_port = Some(port);
+    project.last_error = None;
     upsert_project(&state.db_path, &project)?;
     let command_spec = build_command(&project, &settings, port)?;
     insert_log(
@@ -787,6 +942,7 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
     )
     .map_err(|error| error.to_string())?;
     project.command = Some(command_spec.display);
+    project.last_started_at = Some(started_at);
     project.updated_at = now();
     upsert_project(&state.db_path, &project)?;
     monitor_project_startup(
@@ -804,9 +960,12 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
 
 #[tauri::command]
 fn install_project_dependencies(id: String, state: State<AppState>) -> Result<Project, String> {
-    let mut project = get_project(&state.db_path, &id)?;
+    let mut project = project_by_id(&state.db_path, &id)?;
     validate_project_path(Path::new(&project.path))?;
-    if !matches!(project.project_type.as_str(), "next" | "vite" | "astro") {
+    if !matches!(
+        project.project_type.as_str(),
+        "next" | "vite" | "astro" | "node"
+    ) {
         return Err("Dependency installation is only available for Node.js projects.".to_string());
     }
     if !project.trusted {
@@ -820,7 +979,10 @@ fn install_project_dependencies(id: String, state: State<AppState>) -> Result<Pr
         "package.json not found. Cannot install dependencies.",
     )?;
     let settings = read_settings_at(&state.db_path)?;
-    let manager = package_manager(&settings);
+    let manager = project
+        .package_manager
+        .clone()
+        .unwrap_or_else(|| package_manager(&settings));
     let program = resolve_runtime(&manager, &settings);
     let args = vec!["install".to_string()];
     let display = format!("{} install", program);
@@ -888,7 +1050,7 @@ fn stop_project(id: String, state: State<AppState>) -> Result<Project, String> {
 }
 
 fn stop_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
-    let mut project = get_project(&state.db_path, id)?;
+    let mut project = project_by_id(&state.db_path, id)?;
     project.status = "stopping".to_string();
     upsert_project(&state.db_path, &project)?;
     if let Some(mut child) = state
@@ -998,7 +1160,7 @@ fn open_external_url(url: String) -> Result<(), String> {
 
 #[tauri::command]
 fn clear_project_cache(id: String, state: State<AppState>) -> Result<(), String> {
-    let project = get_project(&state.db_path, &id)?;
+    let project = project_by_id(&state.db_path, &id)?;
     clear_cache_at(Path::new(&project.path))?;
     insert_log(
         &state.db_path,
@@ -1447,6 +1609,7 @@ fn friendly_spawn_error(project: &Project, command: &str, error: std::io::Error)
     match project.project_type.as_str() {
         "next" => format!("Не удалось запустить Next.js проект. Проверь, установлен ли pnpm, существует ли package.json в корне проекта, и доступна ли команда: {}. Детали: {}", command, error),
         "vite" | "astro" => format!("Не удалось запустить dev server. Проверь pnpm install и script dev в package.json. Детали: {}", error),
+        "node" => format!("Не удалось запустить Node.js проект. Проверь package.json, script dev и установленный package manager. Детали: {}", error),
         "php" => format!("PHP не найден или не запускается. Укажи PHP path в Settings > Runtime. Детали: {}", error),
         "static" => format!("Не удалось запустить static server через Node.js. Проверь Node path или bundled runtime. Детали: {}", error),
         _ => format!("spawn failed: {}", error),
@@ -1473,10 +1636,10 @@ fn stream_child_logs(
     });
 }
 
-fn get_project(db_path: &Path, id: &str) -> Result<Project, String> {
+fn project_by_id(db_path: &Path, id: &str) -> Result<Project, String> {
     connect(db_path)?
         .query_row(
-            "SELECT id, name, path, project_type, port, command, status, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at FROM projects WHERE id = ?1",
+            "SELECT id, name, path, project_type, port, command, status, package_manager, use_docker, dev_port, proxy_port, last_started_at, last_error, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at FROM projects WHERE id = ?1",
             params![id],
             project_from_row,
         )
@@ -1492,20 +1655,26 @@ fn project_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         port: row.get(4)?,
         command: row.get(5)?,
         status: row.get(6)?,
-        use_turbopack: row.get::<_, i64>(7)? == 1,
-        trusted: row.get::<_, i64>(8)? == 1,
-        trusted_at: row.get(9)?,
-        trusted_runtime: row.get(10)?,
-        created_at: row.get(11)?,
-        updated_at: row.get(12)?,
+        package_manager: row.get(7)?,
+        use_docker: row.get::<_, i64>(8)? == 1,
+        dev_port: row.get(9)?,
+        proxy_port: row.get(10)?,
+        last_started_at: row.get(11)?,
+        last_error: row.get(12)?,
+        use_turbopack: row.get::<_, i64>(13)? == 1,
+        trusted: row.get::<_, i64>(14)? == 1,
+        trusted_at: row.get(15)?,
+        trusted_runtime: row.get(16)?,
+        created_at: row.get(17)?,
+        updated_at: row.get(18)?,
     })
 }
 
 fn upsert_project(db_path: &Path, project: &Project) -> Result<(), String> {
     connect(db_path)?
         .execute(
-            "INSERT OR REPLACE INTO projects (id, name, path, project_type, port, command, status, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT OR REPLACE INTO projects (id, name, path, project_type, port, command, status, package_manager, use_docker, dev_port, proxy_port, last_started_at, last_error, use_turbopack, trusted, trusted_at, trusted_runtime, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 project.id,
                 project.name,
@@ -1514,6 +1683,12 @@ fn upsert_project(db_path: &Path, project: &Project) -> Result<(), String> {
                 project.port,
                 project.command,
                 project.status,
+                project.package_manager,
+                if project.use_docker { 1 } else { 0 },
+                project.dev_port,
+                project.proxy_port,
+                project.last_started_at,
+                project.last_error,
                 if project.use_turbopack { 1 } else { 0 },
                 if project.trusted { 1 } else { 0 },
                 project.trusted_at,
@@ -1528,7 +1703,7 @@ fn upsert_project(db_path: &Path, project: &Project) -> Result<(), String> {
 
 fn trust_runtime_for_project(project: &Project, settings: &Settings) -> String {
     match project.project_type.as_str() {
-        "next" | "vite" | "astro" => package_manager(settings),
+        "next" | "vite" | "astro" | "node" => package_manager(settings),
         "php" => "php".to_string(),
         "static" => "node".to_string(),
         _ => "unknown".to_string(),
@@ -1734,6 +1909,174 @@ fn unique_path(base: &Path, name: &str) -> PathBuf {
     candidate
 }
 
+fn normalize_created_project_type(project_type: &str) -> Result<String, String> {
+    let normalized = project_type.trim().to_lowercase();
+    let project_type = match normalized.as_str() {
+        "vite-react" | "vite-vanilla" | "vite" => "vite",
+        "next.js" | "next" => "next",
+        "astro" => "astro",
+        "static-html" | "static" => "static",
+        "empty-node" | "node" => "node",
+        "php-basic" | "php" => "php",
+        _ => return Err(
+            "Unsupported project type. Choose Vite, Next.js, Astro, Static HTML, Node.js or PHP."
+                .to_string(),
+        ),
+    };
+    validate_project_type(project_type)?;
+    Ok(project_type.to_string())
+}
+
+fn safe_project_folder_name(name: &str) -> String {
+    let sanitized = name
+        .trim()
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '-',
+            ch if ch.is_control() => '-',
+            ch => ch,
+        })
+        .collect::<String>()
+        .trim_matches([' ', '.'])
+        .to_string();
+    if sanitized.is_empty() {
+        "project".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn write_project_wizard_template(
+    requested_type: &str,
+    project_type: &str,
+    name: &str,
+    target: &Path,
+) -> Result<(), String> {
+    match requested_type.trim().to_lowercase().as_str() {
+        "vite-react" | "vite" if project_type == "vite" => {
+            fs::create_dir_all(target.join("src")).map_err(|error| error.to_string())?;
+            fs::write(target.join("package.json"), vite_package())
+                .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("index.html"),
+                "<div id=\"root\"></div><script type=\"module\" src=\"/src/main.tsx\"></script>\n",
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("src").join("main.tsx"),
+                format!(
+                    "import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport './style.css';\n\nReactDOM.createRoot(document.getElementById('root')!).render(<h1>{}</h1>);\n",
+                    name
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("src").join("style.css"),
+                "body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:40px;background:#111;color:#f8fafc;}\n",
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(target.join("vite.config.ts"), "import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n").map_err(|error| error.to_string())?;
+        }
+        "vite-vanilla" => {
+            fs::write(target.join("package.json"), vite_vanilla_package())
+                .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("index.html"),
+                format!(
+                    "<!doctype html><html><head><title>{}</title><link rel=\"stylesheet\" href=\"/src/style.css\"></head><body><main><h1>{}</h1></main><script type=\"module\" src=\"/src/main.js\"></script></body></html>\n",
+                    name, name
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+            fs::create_dir_all(target.join("src")).map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("src").join("main.js"),
+                "console.log('Vite vanilla project ready');\n",
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("src").join("style.css"),
+                "body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:40px;background:#111;color:#f8fafc;}\n",
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        "next" | "next.js" => {
+            fs::create_dir_all(target.join("app")).map_err(|error| error.to_string())?;
+            fs::write(target.join("package.json"), next_package(false))
+                .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("app").join("page.tsx"),
+                format!(
+                    "export default function Page() {{\n  return <main><h1>{}</h1></main>;\n}}\n",
+                    name
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(target.join("app").join("layout.tsx"), "import type { ReactNode } from 'react';\n\nexport default function RootLayout({ children }: { children: ReactNode }) {\n  return <html lang=\"en\"><body>{children}</body></html>;\n}\n").map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("next.config.mjs"),
+                "const nextConfig = {};\nexport default nextConfig;\n",
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        "astro" => {
+            fs::create_dir_all(target.join("src").join("pages"))
+                .map_err(|error| error.to_string())?;
+            fs::write(target.join("package.json"), astro_package())
+                .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("src").join("pages").join("index.astro"),
+                format!(
+                    "---\nconst title = '{}';\n---\n<html><head><title>{{title}}</title></head><body><main><h1>{{title}}</h1></main></body></html>\n",
+                    name
+                ),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        "static-html" | "static" => {
+            fs::write(target.join("index.html"), format!("<!doctype html><html><head><title>{}</title><link rel=\"stylesheet\" href=\"styles.css\"></head><body><main><h1>{}</h1></main><script src=\"script.js\"></script></body></html>\n", name, name)).map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("styles.css"),
+                "body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:40px;background:#111;color:#f8fafc;}\n",
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("script.js"),
+                "console.log('Static project ready');\n",
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        "empty-node" | "node" => {
+            fs::write(target.join("package.json"), node_package())
+                .map_err(|error| error.to_string())?;
+            fs::write(target.join("server.js"), "const http = require('http');\nconst port = process.env.PORT || 3000;\nhttp.createServer((_, res) => {\n  res.writeHead(200, { 'content-type': 'text/html' });\n  res.end('<h1>Node.js project ready</h1>');\n}).listen(port, '0.0.0.0', () => console.log(`Node server ready on ${port}`));\n").map_err(|error| error.to_string())?;
+        }
+        "php-basic" | "php" => {
+            fs::create_dir_all(target.join("assets").join("css"))
+                .map_err(|error| error.to_string())?;
+            fs::create_dir_all(target.join("assets").join("js"))
+                .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("index.php"),
+                format!("<?php $title = '{}'; ?><!doctype html><html><head><title><?= $title ?></title><link rel=\"stylesheet\" href=\"assets/css/style.css\"></head><body><main><h1><?= $title ?></h1></main><script src=\"assets/js/app.js\"></script></body></html>\n", name),
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("assets").join("css").join("style.css"),
+                "body{font-family:Inter,Segoe UI,Arial,sans-serif;margin:40px;background:#111;color:#f8fafc;}\n",
+            )
+            .map_err(|error| error.to_string())?;
+            fs::write(
+                target.join("assets").join("js").join("app.js"),
+                "console.log('PHP project ready');\n",
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        _ => return Err("Unsupported project template.".to_string()),
+    }
+    Ok(())
+}
+
 fn write_builtin_template(template_id: &str, target: &Path) -> Result<(), String> {
     match template_id {
         "next-app-router" | "next-tailwind" => {
@@ -1801,6 +2144,18 @@ fn next_package(tailwind: bool) -> String {
 
 fn vite_package() -> &'static str {
     "{\n  \"scripts\": { \"dev\": \"vite\" },\n  \"dependencies\": { \"@vitejs/plugin-react\": \"latest\", \"vite\": \"latest\", \"typescript\": \"latest\", \"react\": \"latest\", \"react-dom\": \"latest\", \"@types/react\": \"latest\", \"@types/react-dom\": \"latest\" },\n  \"devDependencies\": {}\n}\n"
+}
+
+fn vite_vanilla_package() -> &'static str {
+    "{\n  \"scripts\": { \"dev\": \"vite\" },\n  \"dependencies\": { \"vite\": \"latest\" },\n  \"devDependencies\": {}\n}\n"
+}
+
+fn astro_package() -> &'static str {
+    "{\n  \"scripts\": { \"dev\": \"astro dev\" },\n  \"dependencies\": { \"astro\": \"latest\" },\n  \"devDependencies\": {}\n}\n"
+}
+
+fn node_package() -> &'static str {
+    "{\n  \"scripts\": { \"dev\": \"node server.js\" },\n  \"dependencies\": {},\n  \"devDependencies\": {}\n}\n"
 }
 
 fn copy_dir_all(source: &Path, target: &Path) -> Result<(), String> {
@@ -2032,9 +2387,11 @@ mod tests {
     }
 
     #[test]
-    fn validate_project_type_rejects_unknown() {
+    fn validate_project_type_accepts_known_types() {
         assert!(validate_project_type("next").is_ok());
-        assert!(validate_project_type("unknown").is_err());
+        assert!(validate_project_type("node").is_ok());
+        assert!(validate_project_type("unknown").is_ok());
+        assert!(validate_project_type("rails").is_err());
     }
 
     #[test]
@@ -2089,6 +2446,12 @@ mod tests {
             port: None,
             command: None,
             status: "stopped".to_string(),
+            package_manager: None,
+            use_docker: false,
+            dev_port: None,
+            proxy_port: None,
+            last_started_at: None,
+            last_error: None,
             use_turbopack: false,
             trusted: false,
             trusted_at: None,

@@ -6,7 +6,7 @@ pub(crate) mod settings;
 pub(crate) use logs::LogEntry;
 pub(crate) use process::{DashboardData, DiagnosticItem, PortInfo, RuntimeInfo, ServerProcess};
 pub(crate) use project::{
-    HostingCompatibilityReport, Project, ProjectDoctorCheck, ProjectDoctorReport, TemplateInfo,
-    TemplateManifest,
+    CreateProjectRequest, HostingCompatibilityReport, Project, ProjectDoctorCheck,
+    ProjectDoctorReport, TemplateInfo, TemplateManifest, UpdateProjectRequest,
 };
 pub(crate) use settings::{default_language, Settings};
