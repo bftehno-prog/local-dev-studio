@@ -1,6 +1,7 @@
 pub(crate) mod command_builder;
 pub(crate) mod hosting_compatibility;
 pub(crate) mod log_service;
+pub(crate) mod port_manager;
 pub(crate) mod process_manager;
 pub(crate) mod project_cache;
 pub(crate) mod project_detector;

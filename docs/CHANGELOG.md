@@ -42,6 +42,7 @@
 - Frontend project wizard split into typed step components.
 - Rust process manager service for PID, status and process-tree lifecycle helpers.
 - Rust log service for list, clear, export, append and retention helpers.
+- Rust port manager service for port lists and LAN preview URL helpers.
 
 ### Changed
 
@@ -76,6 +77,7 @@
 - Project records now carry package manager, Docker, dev/proxy port and last-run metadata.
 - Process startup monitoring and stop helpers moved out of `src-tauri/src/lib.rs`.
 - Log storage operations moved out of `src-tauri/src/lib.rs`.
+- Port list construction moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 
