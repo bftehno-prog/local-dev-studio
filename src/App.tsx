@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Database, Play, Plus, Power, RefreshCcw, Upload } from 'lucide-react';
-import { sections, type SectionId } from './app/routes';
+import { AppShell } from './app/layout/AppShell';
+import type { SectionId } from './app/routes';
 import type { TFunction } from './app/types';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { DiagnosticsPage } from './features/diagnostics/DiagnosticsPage';
@@ -266,148 +266,111 @@ export default function App() {
   }
 
   return (
-    <main className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <Database size={22} />
-          <div>
-            <strong>Local Dev Studio</strong>
-            <span>Windows</span>
-          </div>
-        </div>
-        <nav>
-          {sections.map(([id, labelKey, Icon]) => (
-            <button
-              className={active === id ? 'nav-item active' : 'nav-item'}
-              key={id}
-              onClick={() => setActive(id)}
-            >
-              <Icon size={17} />
-              {t(labelKey)}
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      <section className="workspace">
-        <header className="topbar">
-          <div>
-            <h1>{t(sections.find(([id]) => id === active)?.[1] ?? 'nav.dashboard')}</h1>
-            <p>{message || t('top.subtitle')}</p>
-          </div>
-          <div className="top-actions">
-            <button onClick={() => void refreshVisible().catch(showError)}>
-              <RefreshCcw size={16} /> {t('action.refresh')}
-            </button>
-            <button onClick={() => void run(() => api.startAllProjects(), t('message.allStarted'))}>
-              <Play size={16} /> {t('action.startAll')}
-            </button>
-            <button onClick={() => void run(() => api.stopAllProjects(), t('message.allStopped'))}>
-              <Power size={16} /> {t('action.stopAll')}
-            </button>
-            <button onClick={() => setActive('projects')}>
-              <Plus size={16} /> {t('action.addProject')}
-            </button>
-            <button onClick={() => setActive('templates')}>
-              <Upload size={16} /> {t('action.importZip')}
-            </button>
-          </div>
-        </header>
-
-        {active === 'dashboard' && (
-          <DashboardPage
-            dashboard={dashboard}
-            servers={servers}
-            ports={ports}
-            projects={projects}
-            t={t}
-          />
-        )}
-        {active === 'projects' && (
-          <ProjectsPage
-            projects={projects}
-            servers={servers}
-            logs={logs}
-            settings={settings}
-            doctorReport={doctorReport}
-            hostingReport={hostingReport}
-            selectedProjectId={selectedProjectId}
-            onSelect={setSelectedProjectId}
-            onDoctor={setDoctorReport}
-            onHosting={setHostingReport}
-            onRun={run}
-            t={t}
-          />
-        )}
-        {active === 'sandboxes' && <SandboxesPage templates={templates} onRun={run} t={t} />}
-        {active === 'templates' && <TemplatesPage templates={templates} onRun={run} t={t} />}
-        {active === 'servers' && <ServersPage servers={servers} onRun={run} t={t} />}
-        {active === 'ports' && <PortsPage ports={ports} onRun={run} t={t} />}
-        {active === 'logs' && (
-          <LogsPage
-            logs={logs}
-            level={logLevel}
-            search={logSearch}
-            onLevel={setLogLevel}
-            onSearch={setLogSearch}
-            onRun={run}
-            t={t}
-          />
-        )}
-        {active === 'diagnostics' && (
-          <DiagnosticsPage
-            diagnostics={diagnostics}
-            runtimes={runtimes}
-            onRefresh={() => void Promise.all([refreshDiagnostics(), refreshRuntimes()])}
-            onCopyReport={() => void copyDiagnosticsReport().catch(showError)}
-            onOpenLogs={() => setActive('logs')}
-            t={t}
-          />
-        )}
-        {active === 'settings' && (
-          <SettingsPage
-            settings={settings}
-            onChange={updateSettings}
-            onSave={saveSettings}
-            diagnostics={diagnostics}
-            runtimes={runtimes}
-            onRefreshDiagnostics={refreshDiagnostics}
-            onRefreshRuntimes={refreshRuntimes}
-            t={t}
-            language={language}
-          />
-        )}
-      </section>
-
-      <PreviewPanel
-        t={t}
-        settings={settings}
-        servers={servers}
-        selectedProject={selectedProject}
-        activePreviewServerId={activePreviewServerId}
-        setActivePreviewServerId={setActivePreviewServerId}
-        previewUrl={previewUrl}
-        setPreviewUrl={setPreviewUrl}
-        manualPreviewUrl={manualPreviewUrl}
-        setManualPreviewUrl={setManualPreviewUrl}
-        previewKey={previewKey}
-        setPreviewKey={setPreviewKey}
-        fitPreview={fitPreview}
-        setFitPreview={setFitPreview}
-        previewLoading={previewLoading}
-        setPreviewLoading={setPreviewLoading}
-        previewError={previewError}
-        setPreviewError={setPreviewError}
-        device={device}
-        setDevice={setDevice}
-        previewWidth={previewWidth}
-        previewScale={previewScale}
-        localPreviewUrl={localPreviewUrl}
-        networkPreviewUrl={networkPreviewUrl}
-        activePreviewServer={activePreviewServer}
-        showError={showError}
-        run={run}
-      />
-    </main>
+    <AppShell
+      active={active}
+      message={message}
+      onSelectSection={setActive}
+      onRefresh={() => void refreshVisible().catch(showError)}
+      onStartAll={() => void run(() => api.startAllProjects(), t('message.allStarted'))}
+      onStopAll={() => void run(() => api.stopAllProjects(), t('message.allStopped'))}
+      onAddProject={() => setActive('projects')}
+      onImportZip={() => setActive('templates')}
+      t={t}
+      preview={
+        <PreviewPanel
+          t={t}
+          settings={settings}
+          servers={servers}
+          selectedProject={selectedProject}
+          activePreviewServerId={activePreviewServerId}
+          setActivePreviewServerId={setActivePreviewServerId}
+          previewUrl={previewUrl}
+          setPreviewUrl={setPreviewUrl}
+          manualPreviewUrl={manualPreviewUrl}
+          setManualPreviewUrl={setManualPreviewUrl}
+          previewKey={previewKey}
+          setPreviewKey={setPreviewKey}
+          fitPreview={fitPreview}
+          setFitPreview={setFitPreview}
+          previewLoading={previewLoading}
+          setPreviewLoading={setPreviewLoading}
+          previewError={previewError}
+          setPreviewError={setPreviewError}
+          device={device}
+          setDevice={setDevice}
+          previewWidth={previewWidth}
+          previewScale={previewScale}
+          localPreviewUrl={localPreviewUrl}
+          networkPreviewUrl={networkPreviewUrl}
+          activePreviewServer={activePreviewServer}
+          showError={showError}
+          run={run}
+        />
+      }
+    >
+      {active === 'dashboard' && (
+        <DashboardPage
+          dashboard={dashboard}
+          servers={servers}
+          ports={ports}
+          projects={projects}
+          t={t}
+        />
+      )}
+      {active === 'projects' && (
+        <ProjectsPage
+          projects={projects}
+          servers={servers}
+          logs={logs}
+          settings={settings}
+          doctorReport={doctorReport}
+          hostingReport={hostingReport}
+          selectedProjectId={selectedProjectId}
+          onSelect={setSelectedProjectId}
+          onDoctor={setDoctorReport}
+          onHosting={setHostingReport}
+          onRun={run}
+          t={t}
+        />
+      )}
+      {active === 'sandboxes' && <SandboxesPage templates={templates} onRun={run} t={t} />}
+      {active === 'templates' && <TemplatesPage templates={templates} onRun={run} t={t} />}
+      {active === 'servers' && <ServersPage servers={servers} onRun={run} t={t} />}
+      {active === 'ports' && <PortsPage ports={ports} onRun={run} t={t} />}
+      {active === 'logs' && (
+        <LogsPage
+          logs={logs}
+          level={logLevel}
+          search={logSearch}
+          onLevel={setLogLevel}
+          onSearch={setLogSearch}
+          onRun={run}
+          t={t}
+        />
+      )}
+      {active === 'diagnostics' && (
+        <DiagnosticsPage
+          diagnostics={diagnostics}
+          runtimes={runtimes}
+          onRefresh={() => void Promise.all([refreshDiagnostics(), refreshRuntimes()])}
+          onCopyReport={() => void copyDiagnosticsReport().catch(showError)}
+          onOpenLogs={() => setActive('logs')}
+          t={t}
+        />
+      )}
+      {active === 'settings' && (
+        <SettingsPage
+          settings={settings}
+          onChange={updateSettings}
+          onSave={saveSettings}
+          diagnostics={diagnostics}
+          runtimes={runtimes}
+          onRefreshDiagnostics={refreshDiagnostics}
+          onRefreshRuntimes={refreshRuntimes}
+          t={t}
+          language={language}
+        />
+      )}
+    </AppShell>
   );
 }
