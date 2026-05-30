@@ -16,10 +16,13 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { sections, type SectionId } from './app/routes';
 import type { TFunction } from './app/types';
 import { DashboardPage } from './features/dashboard/DashboardPage';
+import { DiagnosticsPage } from './features/diagnostics/DiagnosticsPage';
 import { LogsPage } from './features/logs/LogsPage';
 import { PortsPage } from './features/ports/PortsPage';
 import { PreviewPanel } from './features/preview/PreviewPanel';
 import { ServersPage } from './features/servers/ServersPage';
+import { SandboxesPage } from './features/templates/SandboxesPage';
+import { TemplatesPage } from './features/templates/TemplatesPage';
 import { emptySettings } from './lib/constants';
 import { translate, type Language } from './lib/i18n';
 import type {
@@ -36,7 +39,7 @@ import type {
   TemplateInfo,
 } from './lib/types';
 import { api, normalizeApiError } from './shared/lib/api';
-import { Info, LogList, Metric, Status, templateName } from './shared/ui/DataViews';
+import { Info, LogList, Metric, Status } from './shared/ui/DataViews';
 
 export default function App() {
   const [active, setActive] = useState<SectionId>('dashboard');
@@ -347,8 +350,8 @@ export default function App() {
             t={t}
           />
         )}
-        {active === 'sandboxes' && <SandboxesView templates={templates} onRun={run} t={t} />}
-        {active === 'templates' && <TemplatesView templates={templates} onRun={run} t={t} />}
+        {active === 'sandboxes' && <SandboxesPage templates={templates} onRun={run} t={t} />}
+        {active === 'templates' && <TemplatesPage templates={templates} onRun={run} t={t} />}
         {active === 'servers' && <ServersPage servers={servers} onRun={run} t={t} />}
         {active === 'ports' && <PortsPage ports={ports} onRun={run} t={t} />}
         {active === 'logs' && (
@@ -363,7 +366,7 @@ export default function App() {
           />
         )}
         {active === 'diagnostics' && (
-          <DiagnosticsView
+          <DiagnosticsPage
             diagnostics={diagnostics}
             runtimes={runtimes}
             onRefresh={() => void Promise.all([refreshDiagnostics(), refreshRuntimes()])}
@@ -854,286 +857,6 @@ function ProjectsView({
           </div>
         </Panel>
       )}
-    </div>
-  );
-}
-
-function SandboxesView({
-  templates,
-  onRun,
-  t,
-}: {
-  templates: TemplateInfo[];
-  onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
-  t: TFunction;
-}) {
-  return (
-    <div className="content">
-      <Panel title={t('sandbox.create')}>
-        <div className="template-grid">
-          {templates
-            .filter((template) => template.built_in)
-            .map((template) => (
-              <article className="template-card" key={template.id}>
-                <strong>{templateName(template, t)}</strong>
-                <span>{template.project_type}</span>
-                <button
-                  onClick={() =>
-                    onRun(() => api.createSandbox(template.id), t('message.sandboxCreated'))
-                  }
-                >
-                  <Play size={16} /> {t('action.create')}
-                </button>
-              </article>
-            ))}
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
-function TemplatesView({
-  templates,
-  onRun,
-  t,
-}: {
-  templates: TemplateInfo[];
-  onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
-  t: TFunction;
-}) {
-  const [zipPath, setZipPath] = useState('');
-  const [zipMessage, setZipMessage] = useState('');
-  function acceptZip(path: string) {
-    if (!path.toLowerCase().endsWith('.zip')) {
-      setZipMessage(t('templates.zipOnly'));
-      return;
-    }
-    setZipPath(path);
-    setZipMessage('');
-    window.localStorage.setItem('local-dev-studio:lastZipPath', path);
-  }
-  async function chooseZip() {
-    const selected = await open({
-      directory: false,
-      multiple: false,
-      title: t('templates.selectZip'),
-      filters: [{ name: 'ZIP', extensions: ['zip'] }],
-    });
-    if (typeof selected === 'string') {
-      acceptZip(selected);
-    }
-  }
-  useEffect(() => {
-    setZipPath(window.localStorage.getItem('local-dev-studio:lastZipPath') || '');
-  }, []);
-  return (
-    <div className="content">
-      <Panel title={t('templates.title')}>
-        <div
-          className="drop-zone"
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault();
-            const files = Array.from(event.dataTransfer.files);
-            const zip = files.find((file) => file.name.toLowerCase().endsWith('.zip'));
-            if (!zip) {
-              setZipMessage(t('templates.dropZipWarning'));
-              return;
-            }
-            acceptZip((zip as File & { path?: string }).path || zip.name);
-          }}
-        >
-          <Upload size={18} />
-          <span>{t('templates.dropZip')}</span>
-        </div>
-        <div className="toolbar">
-          <input
-            value={zipPath}
-            onChange={(event) => setZipPath(event.target.value)}
-            placeholder="C:\Users\User\Downloads\template.zip"
-          />
-          <button onClick={() => void chooseZip()}>
-            <Folder size={16} /> {t('action.chooseZip')}
-          </button>
-          <button
-            onClick={() =>
-              onRun(() => api.importTemplateZip(zipPath), t('message.templateImported'))
-            }
-          >
-            {t('action.importZip')}
-          </button>
-        </div>
-        {zipMessage && <p className="muted">{zipMessage}</p>}
-        <table>
-          <thead>
-            <tr>
-              <th>{t('table.name')}</th>
-              <th>{t('table.type')}</th>
-              <th>{t('table.source')}</th>
-              <th>{t('table.actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {templates.map((template) => (
-              <tr key={template.id}>
-                <td>{templateName(template, t)}</td>
-                <td>{template.project_type}</td>
-                <td>{template.built_in ? t('templates.builtin') : t('templates.user')}</td>
-                <td className="actions">
-                  <button
-                    onClick={() =>
-                      onRun(() => api.createFromTemplate(template.id), t('message.templateCreated'))
-                    }
-                  >
-                    {t('action.create')}
-                  </button>
-                  <button
-                    onClick={() =>
-                      onRun(
-                        () => api.duplicateTemplate(template.id),
-                        t('message.templateDuplicated'),
-                      )
-                    }
-                  >
-                    {t('action.duplicate')}
-                  </button>
-                  <button
-                    onClick={() =>
-                      onRun(() => api.exportTemplateZip(template.id), t('message.templateExported'))
-                    }
-                  >
-                    {t('action.export')}
-                  </button>
-                  {!template.built_in && (
-                    <button
-                      onClick={() =>
-                        onRun(() => api.deleteTemplate(template.id), t('message.templateDeleted'))
-                      }
-                    >
-                      {t('action.delete')}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
-    </div>
-  );
-}
-
-function DiagnosticsView({
-  diagnostics,
-  runtimes,
-  onRefresh,
-  onCopyReport,
-  onOpenLogs,
-  t,
-}: {
-  diagnostics: DiagnosticItem[];
-  runtimes: RuntimeInfo[];
-  onRefresh: () => void;
-  onCopyReport: () => void;
-  onOpenLogs: () => void;
-  t: TFunction;
-}) {
-  return (
-    <div className="content">
-      <Panel title={t('nav.diagnostics')}>
-        <div className="toolbar">
-          <button onClick={onRefresh}>
-            <RefreshCcw size={16} /> {t('action.rerunDiagnostics')}
-          </button>
-          <button onClick={onCopyReport}>{t('action.copyReport')}</button>
-          <button onClick={onOpenLogs}>{t('nav.logs')}</button>
-        </div>
-        <div className="metrics">
-          <Metric
-            label={t('settings.runtimeHealth')}
-            value={`${runtimes.filter((runtime) => runtime.found).length}/${runtimes.length}`}
-          />
-          <Metric
-            label={t('table.error')}
-            value={
-              diagnostics.filter((item) => item.status === 'Error' || item.status === 'Missing')
-                .length
-            }
-          />
-          <Metric
-            label="SQLite"
-            value={diagnostics.find((item) => item.name === 'SQLite data')?.status ?? '-'}
-          />
-          <Metric
-            label="PATH"
-            value={diagnostics.find((item) => item.name === 'PATH')?.status ?? '-'}
-          />
-        </div>
-      </Panel>
-      <Panel title={t('settings.runtimeHealth')}>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('table.runtime')}</th>
-              <th>{t('table.status')}</th>
-              <th>{t('table.version')}</th>
-              <th>{t('settings.source')}</th>
-              <th>{t('table.path')}</th>
-              <th>{t('table.error')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runtimes.map((runtime) => (
-              <tr key={runtime.name}>
-                <td>{runtime.name}</td>
-                <td>
-                  <span className={`status ${runtime.found ? 'running' : 'error'}`}>
-                    {runtime.found ? 'OK' : t('empty.notFound')}
-                  </span>
-                </td>
-                <td>
-                  <code>{runtime.version || '-'}</code>
-                </td>
-                <td>{runtime.source}</td>
-                <td>
-                  <code>{runtime.path || '-'}</code>
-                </td>
-                <td>{runtime.error || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
-      <Panel title={t('settings.diagnostics')}>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('table.name')}</th>
-              <th>{t('table.status')}</th>
-              <th>{t('table.version')}</th>
-              <th>{t('table.path')}</th>
-              <th>{t('table.error')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {diagnostics.map((item) => (
-              <tr key={`${item.name}-${item.path}`}>
-                <td>{item.name}</td>
-                <td>
-                  <span className={`status ${item.status.toLowerCase()}`}>{item.status}</span>
-                </td>
-                <td>
-                  <code>{item.version || '-'}</code>
-                </td>
-                <td>
-                  <code>{item.path || '-'}</code>
-                </td>
-                <td>{item.error || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
     </div>
   );
 }
