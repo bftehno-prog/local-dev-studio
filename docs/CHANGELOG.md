@@ -32,6 +32,7 @@
 - App entry component moved to `src/app/App.tsx`.
 - Rust runtime resolver service module.
 - Rust project detector service module.
+- Rust shared-hosting compatibility service module.
 
 ### Changed
 
@@ -58,6 +59,7 @@
 - Root `src/App.tsx` is now a compatibility re-export for the app-level component.
 - Runtime resolution, runtime PATH construction and version helpers moved out of `src-tauri/src/lib.rs`.
 - Project type detection, dev-script checks and dependency readiness helpers moved out of `src-tauri/src/lib.rs`.
+- Shared-hosting compatibility scanning moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 
