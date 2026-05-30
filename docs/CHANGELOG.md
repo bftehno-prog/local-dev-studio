@@ -30,6 +30,7 @@
 - Feature module for Settings page.
 - App shell layout modules for Sidebar and Topbar.
 - App entry component moved to `src/app/App.tsx`.
+- Rust runtime resolver service module.
 
 ### Changed
 
@@ -54,6 +55,7 @@
 - `App.tsx` now delegates Settings to a feature page and no longer owns page-local form controls.
 - `App.tsx` now delegates sidebar, topbar and shell composition to `src/app/layout`.
 - Root `src/App.tsx` is now a compatibility re-export for the app-level component.
+- Runtime resolution, runtime PATH construction and version helpers moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 
