@@ -13,6 +13,7 @@ import type {
 import { api } from '../../shared/lib/api';
 import { Panel } from '../../components/ui/Panel';
 import { Info, LogList, Status } from '../../shared/ui/DataViews';
+import { ProjectWizard } from './ProjectWizard';
 
 export function ProjectsPage({
   projects,
@@ -50,7 +51,7 @@ export function ProjectsPage({
     ? logs.filter((log) => log.project_id === selectedProject.id).slice(0, 5)
     : [];
   const isNodeProject = (project: Project) =>
-    ['next', 'vite', 'astro'].includes(project.project_type);
+    ['next', 'vite', 'astro', 'node'].includes(project.project_type);
 
   async function chooseFolder() {
     const selected = await open({
@@ -65,6 +66,10 @@ export function ProjectsPage({
 
   return (
     <div className="content">
+      <ProjectWizard
+        onCreated={(project) => onRun(async () => project, t('message.projectCreated'))}
+        t={t}
+      />
       <Panel title={t('projects.addExisting')}>
         <div className="input-row">
           <input
@@ -238,7 +243,14 @@ export function ProjectsPage({
                 label={t('table.trust')}
                 value={selectedProject.trusted ? 'trusted' : 'untrusted'}
               />
-              <Info label={t('settings.packageManager')} value={settings.package_manager} />
+              <Info
+                label={t('settings.packageManager')}
+                value={selectedProject.package_manager || settings.package_manager}
+              />
+              <Info
+                label={t('wizard.useDocker')}
+                value={selectedProject.use_docker ? 'yes' : 'no'}
+              />
               <Info label={t('table.runtime')} value={selectedProject.trusted_runtime || '-'} />
               <Info
                 label={t('table.port')}

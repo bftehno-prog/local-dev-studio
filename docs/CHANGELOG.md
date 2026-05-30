@@ -39,6 +39,7 @@
 - Rust models module with project, settings, log and process DTOs.
 - SQLite storage migration for terminal sessions, recent files and future preview/Docker project metadata.
 - Backend project wizard commands for create/import/get/update/delete project flows.
+- Frontend project wizard split into typed step components.
 
 ### Changed
 

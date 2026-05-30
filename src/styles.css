@@ -254,6 +254,20 @@ h2 {
   flex-wrap: wrap;
 }
 
+.wizard-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.wizard-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.wizard-status.error {
+  color: var(--err);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
