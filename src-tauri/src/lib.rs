@@ -1,6 +1,5 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
     io::{BufRead, BufReader},
@@ -19,11 +18,17 @@ use tauri::{
 use uuid::Uuid;
 
 mod db;
+mod models;
 mod security;
 mod services;
 mod state;
 mod utils;
 
+use models::{
+    default_language, DashboardData, DiagnosticItem, HostingCompatibilityReport, LogEntry,
+    PortInfo, Project, ProjectDoctorReport, RuntimeInfo, ServerProcess, Settings, TemplateInfo,
+    TemplateManifest,
+};
 use security::validation::{
     is_allowed_project_type, validate_package_manager, validate_project_path, validate_project_type,
 };
@@ -41,185 +46,6 @@ use utils::{
     paths::default_data_dir,
     time::now,
 };
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Project {
-    id: String,
-    name: String,
-    path: String,
-    project_type: String,
-    port: Option<u16>,
-    command: Option<String>,
-    status: String,
-    use_turbopack: bool,
-    trusted: bool,
-    trusted_at: Option<String>,
-    trusted_runtime: Option<String>,
-    created_at: String,
-    updated_at: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Settings {
-    #[serde(default = "default_language")]
-    language: String,
-    #[serde(default)]
-    onboarding_completed: bool,
-    projects_folder: String,
-    sandboxes_folder: String,
-    package_manager: String,
-    port_start: u16,
-    port_end: u16,
-    open_preview_automatically: bool,
-    start_minimized: bool,
-    launch_on_startup: bool,
-    use_bundled_node: bool,
-    node_path: String,
-    npm_path: String,
-    pnpm_path: String,
-    yarn_path: String,
-    bun_path: String,
-    php_path: String,
-    git_path: String,
-    use_turbopack: bool,
-    clear_next_before_start: bool,
-    enable_network_preview: bool,
-    enable_https: bool,
-    default_next_port: u16,
-    default_device: String,
-    desktop_width: u16,
-    laptop_width: u16,
-    tablet_width: u16,
-    mobile_width: u16,
-    custom_width: u16,
-    auto_reload_preview: bool,
-    open_external_browser_on_start: bool,
-    environment_variables: String,
-    hosts: String,
-    ssl_certificates: String,
-    proxy_rules: String,
-    process_timeout: u32,
-    log_retention: u32,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct DashboardData {
-    running_projects: usize,
-    stopped_projects: usize,
-    used_ports: Vec<u16>,
-    node_version: String,
-    npm_version: String,
-    pnpm_version: String,
-    git_version: String,
-    php_version: String,
-    runtime_status: String,
-    recent_errors: Vec<LogEntry>,
-    recent_projects: Vec<Project>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct ServerProcess {
-    project_id: String,
-    project_name: String,
-    project_type: String,
-    pid: u32,
-    port: u16,
-    url: String,
-    network_url: String,
-    status: String,
-    command: String,
-    cwd: String,
-    started_at: String,
-    memory_usage_mb: Option<f32>,
-    cpu_usage: Option<f32>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct LogEntry {
-    id: i64,
-    project_id: Option<String>,
-    project_name: Option<String>,
-    level: String,
-    message: String,
-    created_at: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct PortInfo {
-    port: u16,
-    available: bool,
-    pid: Option<u32>,
-    project_id: Option<String>,
-    project_name: Option<String>,
-    external: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct TemplateInfo {
-    id: String,
-    name: String,
-    project_type: String,
-    built_in: bool,
-    path: Option<String>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Deserialize)]
-struct TemplateManifest {
-    name: String,
-    #[serde(rename = "type")]
-    project_type: String,
-    version: Option<String>,
-    author: Option<String>,
-    description: Option<String>,
-    #[serde(rename = "defaultPort")]
-    default_port: Option<u16>,
-    #[serde(rename = "packageManager")]
-    package_manager: Option<String>,
-    #[serde(rename = "requiresInstall")]
-    requires_install: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct DiagnosticItem {
-    name: String,
-    status: String,
-    version: String,
-    path: String,
-    error: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct RuntimeInfo {
-    name: String,
-    found: bool,
-    version: Option<String>,
-    path: Option<String>,
-    source: String,
-    last_checked_at: String,
-    error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct ProjectDoctorCheck {
-    label: String,
-    status: String,
-    message: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct ProjectDoctorReport {
-    project_id: String,
-    project_name: String,
-    checks: Vec<ProjectDoctorCheck>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct HostingCompatibilityReport {
-    project_id: String,
-    project_name: String,
-    checks: Vec<ProjectDoctorCheck>,
-}
 
 pub fn run() {
     tauri::Builder::default()
@@ -416,10 +242,6 @@ fn default_settings() -> Settings {
         process_timeout: 60,
         log_retention: 14,
     }
-}
-
-fn default_language() -> String {
-    "ru".to_string()
 }
 
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {

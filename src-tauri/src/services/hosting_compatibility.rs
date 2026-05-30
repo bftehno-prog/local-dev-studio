@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{HostingCompatibilityReport, Project, ProjectDoctorCheck};
+use crate::models::{HostingCompatibilityReport, Project, ProjectDoctorCheck};
 
 pub(crate) fn build_hosting_compatibility_report(
     project: &Project,

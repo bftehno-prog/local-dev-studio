@@ -4,7 +4,7 @@ use std::{
     process::Command,
 };
 
-use crate::Settings;
+use crate::models::Settings;
 
 pub(crate) fn runtime_version_args(name: &str) -> Result<&'static [&'static str], String> {
     match name {

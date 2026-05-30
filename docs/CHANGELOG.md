@@ -36,6 +36,7 @@
 - Rust project doctor service module.
 - Rust command builder service module.
 - Rust project cache service module.
+- Rust models module with project, settings, log and process DTOs.
 
 ### Changed
 
@@ -66,6 +67,7 @@
 - Project doctor report construction moved out of `src-tauri/src/lib.rs`.
 - Project launch command construction and environment parsing moved out of `src-tauri/src/lib.rs`.
 - Project cache cleanup moved out of `src-tauri/src/lib.rs`.
+- Shared Rust data models moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 

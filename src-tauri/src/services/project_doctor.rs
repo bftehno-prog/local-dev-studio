@@ -1,10 +1,10 @@
 use std::{path::PathBuf, process::Command};
 
+use crate::models::{Project, ProjectDoctorCheck, ProjectDoctorReport, Settings};
 use crate::security::validation::validate_project_type;
 use crate::services::project_detector::package_json_has_script;
 use crate::services::runtime_resolver::resolve_runtime;
 use crate::utils::network::is_port_free;
-use crate::{Project, ProjectDoctorCheck, ProjectDoctorReport, Settings};
 
 pub(crate) fn build_project_doctor_report(
     project: &Project,

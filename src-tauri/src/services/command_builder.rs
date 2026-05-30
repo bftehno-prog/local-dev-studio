@@ -1,8 +1,8 @@
 use std::path::Path;
 
+use crate::models::{Project, Settings};
 use crate::services::project_detector::{ensure_node_modules, package_json_has_script};
 use crate::services::runtime_resolver::resolve_runtime;
-use crate::{Project, Settings};
 
 pub(crate) struct CommandSpec {
     pub(crate) program: String,
