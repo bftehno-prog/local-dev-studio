@@ -15,6 +15,12 @@ pub fn run_migrations(db_path: &Path) -> Result<(), String> {
     .map_err(|error| format!("Failed to prepare schema migrations: {}", error))?;
     apply_migration(&mut conn, 1, "001_initial_schema", initial_schema_sql())?;
     apply_migration(&mut conn, 2, "002_trusted_projects", trusted_projects_sql())?;
+    apply_migration(
+        &mut conn,
+        3,
+        "003_local_ide_storage",
+        local_ide_storage_sql(),
+    )?;
     Ok(())
 }
 
@@ -108,5 +114,38 @@ fn trusted_projects_sql() -> &'static str {
     ALTER TABLE projects ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE projects ADD COLUMN trusted_at TEXT;
     ALTER TABLE projects ADD COLUMN trusted_runtime TEXT;
+    "
+}
+
+fn local_ide_storage_sql() -> &'static str {
+    "
+    ALTER TABLE projects ADD COLUMN package_manager TEXT;
+    ALTER TABLE projects ADD COLUMN use_docker INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE projects ADD COLUMN dev_port INTEGER;
+    ALTER TABLE projects ADD COLUMN proxy_port INTEGER;
+    ALTER TABLE projects ADD COLUMN last_started_at TEXT;
+    ALTER TABLE projects ADD COLUMN last_error TEXT;
+    UPDATE projects SET dev_port = port WHERE dev_port IS NULL AND port IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS terminal_sessions (
+        id TEXT PRIMARY KEY,
+        project_id TEXT,
+        title TEXT NOT NULL,
+        shell TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        pid INTEGER,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS recent_files (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        language TEXT,
+        opened_at TEXT NOT NULL,
+        UNIQUE(project_id, path)
+    );
     "
 }

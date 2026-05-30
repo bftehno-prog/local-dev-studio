@@ -37,6 +37,7 @@
 - Rust command builder service module.
 - Rust project cache service module.
 - Rust models module with project, settings, log and process DTOs.
+- SQLite storage migration for terminal sessions, recent files and future preview/Docker project metadata.
 
 ### Changed
 
