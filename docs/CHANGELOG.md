@@ -24,6 +24,7 @@
 - Shared Hosting Compatibility Checker for PHP/static projects.
 - ZIP template preflight validation before extraction.
 - Explicit dependency installation action for Node.js projects.
+- Feature modules for Dashboard, Servers, Ports and Logs pages.
 
 ### Changed
 
@@ -42,6 +43,7 @@
 - PHP/static projects can be scanned for localhost URLs, Windows paths, mixed content and common shared-hosting entrypoint issues.
 - Template ZIP archives are now fully checked for structure, traversal paths, file count and expanded size before any files are written.
 - Starting a Node.js project no longer runs package-manager install implicitly; missing dependencies now produce a clear action-oriented error.
+- `App.tsx` now delegates Dashboard, Servers, Ports and Logs screens to feature pages without changing the UI.
 
 ### Fixed
 

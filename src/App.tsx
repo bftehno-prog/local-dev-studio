@@ -15,7 +15,11 @@ import {
 import { open } from '@tauri-apps/plugin-dialog';
 import { sections, type SectionId } from './app/routes';
 import type { TFunction } from './app/types';
+import { DashboardPage } from './features/dashboard/DashboardPage';
+import { LogsPage } from './features/logs/LogsPage';
+import { PortsPage } from './features/ports/PortsPage';
 import { PreviewPanel } from './features/preview/PreviewPanel';
+import { ServersPage } from './features/servers/ServersPage';
 import { emptySettings } from './lib/constants';
 import { translate, type Language } from './lib/i18n';
 import type {
@@ -32,17 +36,7 @@ import type {
   TemplateInfo,
 } from './lib/types';
 import { api, normalizeApiError } from './shared/lib/api';
-import {
-  Info,
-  LogList,
-  Metric,
-  PortList,
-  runtimeText,
-  ServerTable,
-  Status,
-  templateName,
-  versionText,
-} from './shared/ui/DataViews';
+import { Info, LogList, Metric, Status, templateName } from './shared/ui/DataViews';
 
 export default function App() {
   const [active, setActive] = useState<SectionId>('dashboard');
@@ -329,7 +323,7 @@ export default function App() {
         </header>
 
         {active === 'dashboard' && (
-          <DashboardView
+          <DashboardPage
             dashboard={dashboard}
             servers={servers}
             ports={ports}
@@ -355,10 +349,10 @@ export default function App() {
         )}
         {active === 'sandboxes' && <SandboxesView templates={templates} onRun={run} t={t} />}
         {active === 'templates' && <TemplatesView templates={templates} onRun={run} t={t} />}
-        {active === 'servers' && <ServersView servers={servers} onRun={run} t={t} />}
-        {active === 'ports' && <PortsView ports={ports} onRun={run} t={t} />}
+        {active === 'servers' && <ServersPage servers={servers} onRun={run} t={t} />}
+        {active === 'ports' && <PortsPage ports={ports} onRun={run} t={t} />}
         {active === 'logs' && (
-          <LogsView
+          <LogsPage
             logs={logs}
             level={logLevel}
             search={logSearch}
@@ -423,57 +417,6 @@ export default function App() {
         run={run}
       />
     </main>
-  );
-}
-
-function DashboardView({
-  dashboard,
-  servers,
-  ports,
-  projects,
-  t,
-}: {
-  dashboard: DashboardData | null;
-  servers: ServerProcess[];
-  ports: PortInfo[];
-  projects: Project[];
-  t: TFunction;
-}) {
-  return (
-    <div className="content">
-      <div className="metrics">
-        <Metric label={t('dashboard.running')} value={dashboard?.running_projects ?? 0} />
-        <Metric
-          label={t('dashboard.stopped')}
-          value={dashboard?.stopped_projects ?? projects.length}
-        />
-        <Metric
-          label={t('dashboard.usedPorts')}
-          value={dashboard?.used_ports.join(', ') || t('empty.none')}
-        />
-        <Metric label={t('dashboard.runtime')} value={runtimeText(dashboard?.runtime_status, t)} />
-      </div>
-      <div className="grid two">
-        <Panel title={t('dashboard.environment')}>
-          <Info label={t('env.node')} value={versionText(dashboard?.node_version, t)} />
-          <Info label={t('env.npm')} value={versionText(dashboard?.npm_version, t)} />
-          <Info label={t('env.pnpm')} value={versionText(dashboard?.pnpm_version, t)} />
-          <Info label={t('env.git')} value={versionText(dashboard?.git_version, t)} />
-          <Info label={t('env.php')} value={versionText(dashboard?.php_version, t)} />
-        </Panel>
-        <Panel title={t('dashboard.activeServers')}>
-          <ServerTable servers={servers} compact t={t} />
-        </Panel>
-      </div>
-      <div className="grid two">
-        <Panel title={t('dashboard.recentErrors')}>
-          <LogList logs={dashboard?.recent_errors ?? []} t={t} />
-        </Panel>
-        <Panel title={t('dashboard.ports')}>
-          <PortList ports={ports.filter((port) => !port.available).slice(0, 12)} t={t} />
-        </Panel>
-      </div>
-    </div>
   );
 }
 
@@ -1075,139 +1018,6 @@ function TemplatesView({
             ))}
           </tbody>
         </table>
-      </Panel>
-    </div>
-  );
-}
-
-function ServersView({
-  servers,
-  onRun,
-  t,
-}: {
-  servers: ServerProcess[];
-  onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
-  t: TFunction;
-}) {
-  return (
-    <div className="content">
-      <Panel title={t('servers.activeProcesses')}>
-        <ServerTable servers={servers} t={t} />
-        <div className="toolbar">
-          <button
-            onClick={() =>
-              onRun(
-                async () =>
-                  Promise.all(servers.map((server) => api.stopProject(server.project_id))),
-                t('message.allStopped'),
-              )
-            }
-          >
-            <Power size={16} /> {t('action.stopAll')}
-          </button>
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
-function PortsView({
-  ports,
-  onRun,
-  t,
-}: {
-  ports: PortInfo[];
-  onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
-  t: TFunction;
-}) {
-  return (
-    <div className="content">
-      <Panel title={t('ports.manager')}>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('table.port')}</th>
-              <th>{t('table.status')}</th>
-              <th>{t('table.project')}</th>
-              <th>{t('table.pid')}</th>
-              <th>{t('table.actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ports.map((port) => (
-              <tr key={port.port}>
-                <td>{port.port}</td>
-                <td>
-                  {port.available
-                    ? t('ports.free')
-                    : port.external
-                      ? t('ports.external')
-                      : t('ports.managed')}
-                </td>
-                <td>{port.project_name || '-'}</td>
-                <td>{port.pid || '-'}</td>
-                <td>
-                  {!port.available && (
-                    <button
-                      onClick={() =>
-                        onRun(() => api.releasePort(port.port), t('message.portReleased'))
-                      }
-                    >
-                      {t('action.release')}
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
-    </div>
-  );
-}
-
-function LogsView({
-  logs,
-  level,
-  search,
-  onLevel,
-  onSearch,
-  onRun,
-  t,
-}: {
-  logs: LogEntry[];
-  level: string;
-  search: string;
-  onLevel: (value: string) => void;
-  onSearch: (value: string) => void;
-  onRun: (action: () => Promise<unknown>, success: string) => Promise<void>;
-  t: TFunction;
-}) {
-  return (
-    <div className="content">
-      <Panel title={t('logs.center')}>
-        <div className="toolbar">
-          <select value={level} onChange={(event) => onLevel(event.target.value)}>
-            <option value="">{t('logs.all')}</option>
-            <option value="info">info</option>
-            <option value="warning">warning</option>
-            <option value="error">error</option>
-            <option value="build">build</option>
-            <option value="server">server</option>
-          </select>
-          <input
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            placeholder={t('logs.search')}
-          />
-          <button onClick={() => onRun(() => api.clearLogs(), t('message.logsCleared'))}>
-            {t('action.clear')}
-          </button>
-          <button onClick={() => onRun(() => api.exportLogs(), t('message.logsExported'))}>
-            {t('action.export')} .txt
-          </button>
-        </div>
-        <LogList logs={logs} t={t} />
       </Panel>
     </div>
   );
