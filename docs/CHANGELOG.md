@@ -27,6 +27,7 @@
 - Feature modules for Dashboard, Servers, Ports and Logs pages.
 - Feature modules for Diagnostics, Templates and Sandboxes pages.
 - Feature modules for Projects and Onboarding pages.
+- Feature module for Settings page.
 
 ### Changed
 
@@ -48,6 +49,7 @@
 - `App.tsx` now delegates Dashboard, Servers, Ports and Logs screens to feature pages without changing the UI.
 - `App.tsx` now delegates Diagnostics, Templates and Sandboxes screens to feature pages without changing behavior.
 - `App.tsx` now delegates Projects and Onboarding screens to feature pages without changing behavior.
+- `App.tsx` now delegates Settings to a feature page and no longer owns page-local form controls.
 
 ### Fixed
 
