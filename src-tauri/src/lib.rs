@@ -29,6 +29,7 @@ use security::validation::{
 };
 use services::command_builder::{build_command, package_manager, parse_environment_variables};
 use services::hosting_compatibility::build_hosting_compatibility_report;
+use services::project_cache::clear_cache_at;
 use services::project_detector::detect_project_type_at;
 use services::project_doctor::build_project_doctor_report;
 use services::runtime_resolver::{
@@ -1183,28 +1184,6 @@ fn clear_project_cache(id: String, state: State<AppState>) -> Result<(), String>
         "build",
         "Next.js cache folders cleared",
     )?;
-    Ok(())
-}
-
-fn clear_cache_at(root: &Path) -> Result<(), String> {
-    for folder in [".next", "node_modules/.cache", ".turbo"] {
-        let target = root.join(folder);
-        if target.exists() {
-            ensure_child_path(root, &target)?;
-            fs::remove_dir_all(&target)
-                .map_err(|error| format!("Failed to remove {}: {}", target.display(), error))?;
-        }
-    }
-    Ok(())
-}
-
-fn ensure_child_path(root: &Path, target: &Path) -> Result<(), String> {
-    let root = root.canonicalize().map_err(|error| error.to_string())?;
-    let target_parent = target.parent().unwrap_or(&root);
-    let target_parent = target_parent.canonicalize().unwrap_or(root.clone());
-    if !target_parent.starts_with(&root) {
-        return Err("Refusing to delete a path outside the project folder.".to_string());
-    }
     Ok(())
 }
 

@@ -35,6 +35,7 @@
 - Rust shared-hosting compatibility service module.
 - Rust project doctor service module.
 - Rust command builder service module.
+- Rust project cache service module.
 
 ### Changed
 
@@ -64,6 +65,7 @@
 - Shared-hosting compatibility scanning moved out of `src-tauri/src/lib.rs`.
 - Project doctor report construction moved out of `src-tauri/src/lib.rs`.
 - Project launch command construction and environment parsing moved out of `src-tauri/src/lib.rs`.
+- Project cache cleanup moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 
