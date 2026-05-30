@@ -34,6 +34,7 @@
 - Rust project detector service module.
 - Rust shared-hosting compatibility service module.
 - Rust project doctor service module.
+- Rust command builder service module.
 
 ### Changed
 
@@ -62,6 +63,7 @@
 - Project type detection, dev-script checks and dependency readiness helpers moved out of `src-tauri/src/lib.rs`.
 - Shared-hosting compatibility scanning moved out of `src-tauri/src/lib.rs`.
 - Project doctor report construction moved out of `src-tauri/src/lib.rs`.
+- Project launch command construction and environment parsing moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 
