@@ -43,6 +43,7 @@
 - Rust process manager service for PID, status and process-tree lifecycle helpers.
 - Rust log service for list, clear, export, append and retention helpers.
 - Rust port manager service for port lists and LAN preview URL helpers.
+- Server process listing moved into the Rust process manager service.
 
 ### Changed
 
@@ -78,6 +79,7 @@
 - Process startup monitoring and stop helpers moved out of `src-tauri/src/lib.rs`.
 - Log storage operations moved out of `src-tauri/src/lib.rs`.
 - Port list construction moved out of `src-tauri/src/lib.rs`.
+- Server process SQL, stale cleanup and CPU/memory sampling moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 

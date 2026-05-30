@@ -7,7 +7,6 @@ use std::{
     sync::{Arc, Mutex},
     thread,
 };
-use sysinfo::{Pid, System};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
@@ -38,7 +37,7 @@ use services::log_service::{
 };
 use services::port_manager::{list_ports as build_port_list, network_url as build_network_url};
 use services::process_manager::{
-    kill_process_tree, mark_project_stopped, monitor_project_startup, stored_pid,
+    kill_process_tree, list_servers as list_servers_at, monitor_project_startup, stored_pid,
     update_project_status,
 };
 use services::project_cache::clear_cache_at;
@@ -1180,60 +1179,7 @@ fn clear_project_cache(id: String, state: State<AppState>) -> Result<(), String>
 
 #[tauri::command]
 fn list_servers(state: State<AppState>) -> Result<Vec<ServerProcess>, String> {
-    let conn = connect(&state.db_path)?;
-    let mut sys = System::new_all();
-    sys.refresh_all();
-    let mut stmt = conn
-        .prepare(
-            "SELECT p.project_id, pr.name, pr.project_type, p.pid, p.port, p.command, p.cwd, p.started_at, p.status
-             FROM processes p JOIN projects pr ON pr.id = p.project_id ORDER BY p.started_at DESC",
-        )
-        .map_err(|error| error.to_string())?;
-    let rows = stmt
-        .query_map([], |row| {
-            let pid_u32: u32 = row.get(3)?;
-            let process = sys.process(Pid::from_u32(pid_u32));
-            Ok((
-                process.is_some(),
-                ServerProcess {
-                    project_id: row.get(0)?,
-                    project_name: row.get(1)?,
-                    project_type: row.get(2)?,
-                    pid: pid_u32,
-                    port: row.get::<_, u16>(4)?,
-                    url: format!("http://localhost:{}", row.get::<_, u16>(4)?),
-                    network_url: network_url(row.get::<_, u16>(4)?).unwrap_or_else(|_| {
-                        format!(
-                            "http://127.0.0.1:{}",
-                            row.get::<_, u16>(4).unwrap_or_default()
-                        )
-                    }),
-                    status: row.get(8)?,
-                    command: row.get(5)?,
-                    cwd: row.get(6)?,
-                    started_at: row.get(7)?,
-                    memory_usage_mb: process.map(|p| p.memory() as f32 / 1024.0 / 1024.0),
-                    cpu_usage: process.map(|p| p.cpu_usage()),
-                },
-            ))
-        })
-        .map_err(|error| error.to_string())?;
-    let mut servers = Vec::new();
-    for row in rows {
-        let (alive, server) = row.map_err(|error| error.to_string())?;
-        if alive {
-            servers.push(server);
-        } else {
-            let _ = mark_project_stopped(&state.db_path, &server.project_id);
-            let _ = insert_log(
-                &state.db_path,
-                Some(&server.project_id),
-                "warning",
-                "Removed stale process record",
-            );
-        }
-    }
-    Ok(servers)
+    list_servers_at(&state.db_path)
 }
 
 #[tauri::command]
