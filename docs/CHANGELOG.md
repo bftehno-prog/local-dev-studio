@@ -40,6 +40,7 @@
 - SQLite storage migration for terminal sessions, recent files and future preview/Docker project metadata.
 - Backend project wizard commands for create/import/get/update/delete project flows.
 - Frontend project wizard split into typed step components.
+- Rust process manager service for PID, status and process-tree lifecycle helpers.
 
 ### Changed
 
@@ -72,6 +73,7 @@
 - Project cache cleanup moved out of `src-tauri/src/lib.rs`.
 - Shared Rust data models moved out of `src-tauri/src/lib.rs`.
 - Project records now carry package manager, Docker, dev/proxy port and last-run metadata.
+- Process startup monitoring and stop helpers moved out of `src-tauri/src/lib.rs`.
 
 ### Fixed
 

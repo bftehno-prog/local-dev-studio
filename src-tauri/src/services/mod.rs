@@ -1,5 +1,6 @@
 pub(crate) mod command_builder;
 pub(crate) mod hosting_compatibility;
+pub(crate) mod process_manager;
 pub(crate) mod project_cache;
 pub(crate) mod project_detector;
 pub(crate) mod project_doctor;

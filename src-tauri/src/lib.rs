@@ -7,7 +7,6 @@ use std::{
     process::{Command, Stdio},
     sync::{Arc, Mutex},
     thread,
-    time::{Duration, Instant},
 };
 use sysinfo::{Pid, System};
 use tauri::{
@@ -34,6 +33,10 @@ use security::validation::{
 };
 use services::command_builder::{build_command, package_manager, parse_environment_variables};
 use services::hosting_compatibility::build_hosting_compatibility_report;
+use services::process_manager::{
+    kill_process_tree, mark_project_stopped, monitor_project_startup, stored_pid,
+    update_project_status,
+};
 use services::project_cache::clear_cache_at;
 use services::project_detector::detect_project_type_at;
 use services::project_doctor::build_project_doctor_report;
@@ -1735,124 +1738,6 @@ fn ensure_file(path: PathBuf, message: &str) -> Result<(), String> {
 
 fn user_error(error: &str) -> String {
     error.lines().next().unwrap_or(error).to_string()
-}
-
-fn monitor_project_startup(
-    db_path: PathBuf,
-    project_id: String,
-    pid: u32,
-    port: u16,
-    timeout_seconds: u32,
-) {
-    thread::spawn(move || {
-        let timeout = Duration::from_secs(timeout_seconds.max(1) as u64);
-        let started = Instant::now();
-        while started.elapsed() < timeout {
-            if !process_exists(pid) {
-                let _ = update_process_status(&db_path, &project_id, "error");
-                let _ = update_project_status(&db_path, &project_id, "error");
-                let _ = insert_log(
-                    &db_path,
-                    Some(&project_id),
-                    "error",
-                    "Process exited before the server became ready",
-                );
-                return;
-            }
-            if !is_port_free(port) {
-                let _ = update_process_status(&db_path, &project_id, "running");
-                let _ = update_project_status(&db_path, &project_id, "running");
-                let _ = insert_log(
-                    &db_path,
-                    Some(&project_id),
-                    "server",
-                    &format!("Server ready on port {}", port),
-                );
-                return;
-            }
-            thread::sleep(Duration::from_millis(350));
-        }
-        let _ = update_process_status(&db_path, &project_id, "error");
-        let _ = update_project_status(&db_path, &project_id, "error");
-        let _ = insert_log(
-            &db_path,
-            Some(&project_id),
-            "error",
-            &format!(
-                "Server did not open port {} within {} seconds.",
-                port,
-                timeout_seconds.max(1)
-            ),
-        );
-    });
-}
-
-fn process_exists(pid: u32) -> bool {
-    let mut sys = System::new_all();
-    sys.refresh_all();
-    sys.process(Pid::from_u32(pid)).is_some()
-}
-
-fn update_process_status(db_path: &Path, project_id: &str, status: &str) -> Result<(), String> {
-    connect(db_path)?
-        .execute(
-            "UPDATE processes SET status = ?2 WHERE project_id = ?1",
-            params![project_id, status],
-        )
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
-
-fn update_project_status(db_path: &Path, project_id: &str, status: &str) -> Result<(), String> {
-    connect(db_path)?
-        .execute(
-            "UPDATE projects SET status = ?2, updated_at = ?3 WHERE id = ?1",
-            params![project_id, status, now()],
-        )
-        .map(|_| ())
-        .map_err(|error| error.to_string())
-}
-
-fn stored_pid(db_path: &Path, project_id: &str) -> Result<Option<u32>, String> {
-    connect(db_path)?
-        .query_row(
-            "SELECT pid FROM processes WHERE project_id = ?1",
-            params![project_id],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())
-}
-
-fn kill_process_tree(pid: u32) {
-    if cfg!(windows) {
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-    } else {
-        let _ = Command::new("kill")
-            .arg("-TERM")
-            .arg(pid.to_string())
-            .status();
-    }
-}
-
-fn mark_project_stopped(db_path: &Path, project_id: &str) -> Result<(), String> {
-    connect(db_path)?
-        .execute(
-            "DELETE FROM processes WHERE project_id = ?1",
-            params![project_id],
-        )
-        .map_err(|error| error.to_string())?;
-    connect(db_path)?
-        .execute(
-            "UPDATE projects SET status = 'stopped', updated_at = ?2 WHERE id = ?1",
-            params![project_id, now()],
-        )
-        .map(|_| ())
-        .map_err(|error| error.to_string())
 }
 
 fn apply_launch_on_startup(settings: &Settings) -> Result<(), String> {
