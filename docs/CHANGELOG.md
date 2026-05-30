@@ -44,6 +44,7 @@
 - Rust log service for list, clear, export, append and retention helpers.
 - Rust port manager service for port lists and LAN preview URL helpers.
 - Server process listing moved into the Rust process manager service.
+- Real local TCP reverse proxy service for project preview HTTP/WebSocket forwarding.
 
 ### Changed
 
@@ -80,6 +81,7 @@
 - Log storage operations moved out of `src-tauri/src/lib.rs`.
 - Port list construction moved out of `src-tauri/src/lib.rs`.
 - Server process SQL, stale cleanup and CPU/memory sampling moved out of `src-tauri/src/lib.rs`.
+- Preview proxy commands added for start, stop, restart, status and proxy preview URL lookup.
 
 ### Fixed
 

@@ -63,3 +63,13 @@ pub(crate) struct RuntimeInfo {
     pub(crate) last_checked_at: String,
     pub(crate) error: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct ProxyStatus {
+    pub(crate) project_id: String,
+    pub(crate) running: bool,
+    pub(crate) proxy_port: Option<u16>,
+    pub(crate) target_port: Option<u16>,
+    pub(crate) preview_url: Option<String>,
+    pub(crate) error: Option<String>,
+}

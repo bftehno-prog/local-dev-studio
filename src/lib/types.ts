@@ -66,6 +66,15 @@ export interface ServerProcess {
   cpu_usage?: number;
 }
 
+export interface ProxyStatus {
+  project_id: string;
+  running: boolean;
+  proxy_port?: number;
+  target_port?: number;
+  preview_url?: string;
+  error?: string;
+}
+
 export interface LogEntry {
   id: number;
   project_id?: string;

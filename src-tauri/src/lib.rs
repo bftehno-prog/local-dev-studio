@@ -23,8 +23,8 @@ mod utils;
 
 use models::{
     default_language, CreateProjectRequest, DashboardData, DiagnosticItem,
-    HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport, RuntimeInfo,
-    ServerProcess, Settings, TemplateInfo, TemplateManifest, UpdateProjectRequest,
+    HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport, ProxyStatus,
+    RuntimeInfo, ServerProcess, Settings, TemplateInfo, TemplateManifest, UpdateProjectRequest,
 };
 use security::validation::{
     is_allowed_project_type, validate_package_manager, validate_project_path, validate_project_type,
@@ -43,10 +43,11 @@ use services::process_manager::{
 use services::project_cache::clear_cache_at;
 use services::project_detector::detect_project_type_at;
 use services::project_doctor::build_project_doctor_report;
+use services::proxy_server::{preview_url as build_proxy_preview_url, spawn_proxy};
 use services::runtime_resolver::{
     resolve_runtime, runtime_path, runtime_source, runtime_version_args, version_for,
 };
-use state::{AppState, ManagedProcesses};
+use state::{AppState, ManagedProcesses, ManagedProxies};
 use utils::{
     network::{find_free_port, is_port_free},
     paths::default_data_dir,
@@ -71,6 +72,7 @@ pub fn run() {
             app.manage(AppState {
                 db_path: db_path.clone(),
                 processes: Arc::new(Mutex::new(ManagedProcesses::default())),
+                proxies: Arc::new(Mutex::new(ManagedProxies::default())),
             });
             create_tray(app.handle())?;
             Ok(())
@@ -97,6 +99,11 @@ pub fn run() {
             open_external_url,
             clear_project_cache,
             network_url,
+            start_proxy,
+            stop_proxy,
+            restart_proxy,
+            get_preview_url,
+            get_proxy_status,
             list_servers,
             list_ports,
             release_port,
@@ -1057,6 +1064,11 @@ fn stop_project(id: String, state: State<AppState>) -> Result<Project, String> {
 
 fn stop_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
     let mut project = project_by_id(&state.db_path, id)?;
+    if let Ok(mut proxies) = state.proxies.lock() {
+        if let Some(mut proxy) = proxies.proxies.remove(id) {
+            proxy.stop();
+        }
+    }
     project.status = "stopping".to_string();
     upsert_project(&state.db_path, &project)?;
     if let Some(mut child) = state
@@ -1185,6 +1197,128 @@ fn list_servers(state: State<AppState>) -> Result<Vec<ServerProcess>, String> {
 #[tauri::command]
 fn network_url(port: u16) -> Result<String, String> {
     Ok(build_network_url(port))
+}
+
+#[tauri::command]
+fn start_proxy(id: String, state: State<AppState>) -> Result<ProxyStatus, String> {
+    start_proxy_inner(&state, &id)
+}
+
+fn start_proxy_inner(state: &AppState, id: &str) -> Result<ProxyStatus, String> {
+    let mut project = project_by_id(&state.db_path, id)?;
+    let target_port = project
+        .port
+        .or(project.dev_port)
+        .ok_or_else(|| "Start the project dev server before starting proxy.".to_string())?;
+    let mut proxies = state
+        .proxies
+        .lock()
+        .map_err(|_| "Proxy lock failed".to_string())?;
+    if let Some(proxy) = proxies.proxies.get(id) {
+        if proxy.target_port == target_port {
+            return Ok(ProxyStatus {
+                project_id: id.to_string(),
+                running: true,
+                proxy_port: Some(proxy.port),
+                target_port: Some(proxy.target_port),
+                preview_url: Some(build_proxy_preview_url(id, proxy.port)),
+                error: None,
+            });
+        }
+    }
+    if let Some(mut proxy) = proxies.proxies.remove(id) {
+        proxy.stop();
+    }
+    let preferred_port = project.proxy_port.unwrap_or(4100);
+    let proxy_port = if is_port_free(preferred_port) {
+        preferred_port
+    } else {
+        find_free_port(4100, 4999)?
+    };
+    let proxy = spawn_proxy(id.to_string(), proxy_port, target_port)?;
+    proxies.proxies.insert(id.to_string(), proxy);
+    project.proxy_port = Some(proxy_port);
+    project.updated_at = now();
+    upsert_project(&state.db_path, &project)?;
+    insert_log(
+        &state.db_path,
+        Some(id),
+        "proxy",
+        &format!(
+            "Proxy started on port {} for dev port {}",
+            proxy_port, target_port
+        ),
+    )?;
+    Ok(ProxyStatus {
+        project_id: id.to_string(),
+        running: true,
+        proxy_port: Some(proxy_port),
+        target_port: Some(target_port),
+        preview_url: Some(build_proxy_preview_url(id, proxy_port)),
+        error: None,
+    })
+}
+
+#[tauri::command]
+fn stop_proxy(id: String, state: State<AppState>) -> Result<ProxyStatus, String> {
+    let mut proxies = state
+        .proxies
+        .lock()
+        .map_err(|_| "Proxy lock failed".to_string())?;
+    if let Some(mut proxy) = proxies.proxies.remove(&id) {
+        proxy.stop();
+        insert_log(&state.db_path, Some(&id), "proxy", "Proxy stopped")?;
+    }
+    Ok(ProxyStatus {
+        project_id: id,
+        running: false,
+        proxy_port: None,
+        target_port: None,
+        preview_url: None,
+        error: None,
+    })
+}
+
+#[tauri::command]
+fn restart_proxy(id: String, state: State<AppState>) -> Result<ProxyStatus, String> {
+    let _ = stop_proxy(id.clone(), state.clone())?;
+    start_proxy(id, state)
+}
+
+#[tauri::command]
+fn get_preview_url(id: String, state: State<AppState>) -> Result<String, String> {
+    let status = get_proxy_status(id.clone(), state)?;
+    status.preview_url.ok_or_else(|| {
+        "Proxy is not running for this project. Start proxy before opening proxy preview."
+            .to_string()
+    })
+}
+
+#[tauri::command]
+fn get_proxy_status(id: String, state: State<AppState>) -> Result<ProxyStatus, String> {
+    let proxies = state
+        .proxies
+        .lock()
+        .map_err(|_| "Proxy lock failed".to_string())?;
+    if let Some(proxy) = proxies.proxies.get(&id) {
+        return Ok(ProxyStatus {
+            project_id: id.clone(),
+            running: true,
+            proxy_port: Some(proxy.port),
+            target_port: Some(proxy.target_port),
+            preview_url: Some(build_proxy_preview_url(&id, proxy.port)),
+            error: None,
+        });
+    }
+    let project = project_by_id(&state.db_path, &id)?;
+    Ok(ProxyStatus {
+        project_id: id,
+        running: false,
+        proxy_port: project.proxy_port,
+        target_port: project.port.or(project.dev_port),
+        preview_url: None,
+        error: None,
+    })
 }
 
 #[tauri::command]

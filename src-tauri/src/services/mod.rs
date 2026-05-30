@@ -6,4 +6,5 @@ pub(crate) mod process_manager;
 pub(crate) mod project_cache;
 pub(crate) mod project_detector;
 pub(crate) mod project_doctor;
+pub(crate) mod proxy_server;
 pub(crate) mod runtime_resolver;
