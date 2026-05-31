@@ -49,6 +49,14 @@ export function DiagnosticsPage({
             label="PATH"
             value={diagnostics.find((item) => item.name === 'PATH')?.status ?? '-'}
           />
+          <Metric
+            label="Docker"
+            value={diagnostics.find((item) => item.name === 'docker')?.status ?? '-'}
+          />
+          <Metric
+            label="WSL"
+            value={diagnostics.find((item) => item.name === 'wsl')?.status ?? '-'}
+          />
         </div>
       </Panel>
       <Panel title={t('settings.runtimeHealth')}>

@@ -12,6 +12,8 @@ pub(crate) fn runtime_version_args(name: &str) -> Result<&'static [&'static str]
         "bun" => Ok(&["--version"]),
         "php" => Ok(&["-v"]),
         "git" => Ok(&["--version"]),
+        "docker" => Ok(&["--version"]),
+        "wsl" => Ok(&["--status"]),
         _ => Err("Unsupported runtime.".to_string()),
     }
 }

@@ -48,6 +48,7 @@
 - Live Preview proxy controls with status, restart, stop and proxy URL display.
 - Built-in project file editor with safe project-root file listing, reading and saving.
 - Built-in project terminal task runner for trusted Node.js projects.
+- Docker, Docker daemon and WSL diagnostics in environment checks.
 
 ### Changed
 
@@ -88,6 +89,7 @@
 - Live Preview can switch the iframe to the stable proxy route after proxy start.
 - Editor skips heavy generated folders and limits editable files to UTF-8 text content.
 - Terminal tasks are restricted to install, build, test and lint with process timeout handling.
+- Projects marked for Docker now fail early with clear Docker readiness errors.
 
 ### Fixed
 

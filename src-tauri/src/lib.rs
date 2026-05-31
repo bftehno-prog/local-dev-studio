@@ -431,9 +431,12 @@ fn diagnostics(state: State<AppState>) -> Result<Vec<DiagnosticItem>, String> {
         ("git", vec!["--version"]),
         ("php", vec!["-v"]),
         ("cargo", vec!["--version"]),
+        ("docker", vec!["--version"]),
+        ("wsl", vec!["--status"]),
     ] {
         items.push(runtime_diagnostic(name, &settings, &args));
     }
+    items.push(docker_daemon_diagnostic());
     items.push(path_diagnostic(
         "PATH",
         env::var("PATH").unwrap_or_default(),
@@ -480,10 +483,12 @@ fn check_runtime(name: String, state: State<AppState>) -> Result<RuntimeInfo, St
 #[tauri::command]
 fn check_all_runtimes(state: State<AppState>) -> Result<Vec<RuntimeInfo>, String> {
     let settings = get_settings(state)?;
-    ["node", "npm", "pnpm", "yarn", "bun", "php", "git"]
-        .into_iter()
-        .map(|name| runtime_info(name, &settings))
-        .collect()
+    [
+        "node", "npm", "pnpm", "yarn", "bun", "php", "git", "docker", "wsl",
+    ]
+    .into_iter()
+    .map(|name| runtime_info(name, &settings))
+    .collect()
 }
 
 fn runtime_info(name: &str, settings: &Settings) -> Result<RuntimeInfo, String> {
@@ -580,6 +585,91 @@ fn path_diagnostic(name: &str, path: String, ok: bool) -> DiagnosticItem {
             "Path is not available.".to_string()
         },
     }
+}
+
+fn docker_daemon_diagnostic() -> DiagnosticItem {
+    match Command::new("docker").arg("info").output() {
+        Ok(output) if output.status.success() => DiagnosticItem {
+            name: "Docker daemon".to_string(),
+            status: "OK".to_string(),
+            version: "Ready".to_string(),
+            path: "docker info".to_string(),
+            error: String::new(),
+        },
+        Ok(output) => DiagnosticItem {
+            name: "Docker daemon".to_string(),
+            status: "Warning".to_string(),
+            version: String::new(),
+            path: "docker info".to_string(),
+            error: String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .next()
+                .unwrap_or("Docker is installed but the daemon is not ready.")
+                .to_string(),
+        },
+        Err(error) => DiagnosticItem {
+            name: "Docker daemon".to_string(),
+            status: "Missing".to_string(),
+            version: String::new(),
+            path: "docker info".to_string(),
+            error: error.to_string(),
+        },
+    }
+}
+
+fn validate_docker_for_project(project: &Project, db_path: &Path) -> Result<(), String> {
+    if !project.use_docker {
+        return Ok(());
+    }
+    let docker_version = Command::new("docker").arg("--version").output();
+    match docker_version {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            return Err(format!(
+                "Docker is required for this project but is not available: {}",
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("docker --version failed")
+            ));
+        }
+        Err(error) => {
+            return Err(format!(
+                "Docker is required for this project but was not found: {}",
+                error
+            ));
+        }
+    }
+    let docker_info = Command::new("docker").arg("info").output();
+    match docker_info {
+        Ok(output) if output.status.success() => {}
+        Ok(output) => {
+            return Err(format!(
+                "Docker is installed but the daemon is not ready: {}",
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .next()
+                    .unwrap_or("docker info failed")
+            ));
+        }
+        Err(error) => {
+            return Err(format!("Could not check Docker daemon: {}", error));
+        }
+    }
+    if cfg!(windows) {
+        match Command::new("wsl").arg("--status").output() {
+            Ok(output) if output.status.success() => {}
+            _ => {
+                let _ = insert_log(
+                    db_path,
+                    Some(&project.id),
+                    "warning",
+                    "WSL status check failed. Docker Desktop may need WSL2 enabled.",
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -878,6 +968,7 @@ fn start_project_inner(state: &AppState, id: &str) -> Result<Project, String> {
             trust_runtime
         ));
     }
+    validate_docker_for_project(&project, &state.db_path)?;
     let port = match project.port {
         Some(port) if is_port_free(port) => port,
         Some(port) => {
@@ -2654,6 +2745,8 @@ mod tests {
     fn runtime_version_args_accept_supported_runtimes() {
         assert_eq!(runtime_version_args("node").unwrap(), ["-v"]);
         assert_eq!(runtime_version_args("bun").unwrap(), ["--version"]);
+        assert_eq!(runtime_version_args("docker").unwrap(), ["--version"]);
+        assert_eq!(runtime_version_args("wsl").unwrap(), ["--status"]);
         assert!(runtime_version_args("powershell").is_err());
     }
 
