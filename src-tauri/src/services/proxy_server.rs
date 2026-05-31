@@ -24,6 +24,10 @@ pub(crate) fn spawn_proxy(
 ) -> Result<ManagedProxy, String> {
     let listener = TcpListener::bind(("127.0.0.1", proxy_port))
         .map_err(|error| format!("Could not start proxy on port {}: {}", proxy_port, error))?;
+    let bound_port = listener
+        .local_addr()
+        .map_err(|error| error.to_string())?
+        .port();
     listener
         .set_nonblocking(true)
         .map_err(|error| error.to_string())?;
@@ -46,7 +50,7 @@ pub(crate) fn spawn_proxy(
         }
     });
     Ok(ManagedProxy {
-        port: proxy_port,
+        port: bound_port,
         target_port,
         stop,
         handle: Some(handle),
@@ -166,11 +170,10 @@ mod tests {
                 .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK")
                 .expect("upstream should write response");
         });
-        let proxy_port = free_port();
-        let mut proxy = spawn_proxy("project_1".to_string(), proxy_port, upstream_port)
-            .expect("proxy should start");
+        let mut proxy =
+            spawn_proxy("project_1".to_string(), 0, upstream_port).expect("proxy should start");
         let mut client =
-            TcpStream::connect(("127.0.0.1", proxy_port)).expect("client should connect to proxy");
+            TcpStream::connect(("127.0.0.1", proxy.port)).expect("client should connect to proxy");
         client
             .write_all(
                 b"GET /preview/project_1/index.html HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
@@ -188,14 +191,6 @@ mod tests {
         upstream_thread.join().expect("upstream should finish");
         assert!(response.contains("HTTP/1.1 200 OK"));
         assert!(response.ends_with("OK"));
-    }
-
-    fn free_port() -> u16 {
-        TcpListener::bind(("127.0.0.1", 0))
-            .expect("port probe should bind")
-            .local_addr()
-            .expect("port probe should have address")
-            .port()
     }
 }
 

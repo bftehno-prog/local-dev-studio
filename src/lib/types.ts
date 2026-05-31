@@ -88,6 +88,19 @@ export interface ProjectFileContent {
   size: number;
 }
 
+export interface TerminalRunResult {
+  project_id: string;
+  task: string;
+  command: string;
+  cwd: string;
+  stdout: string;
+  stderr: string;
+  exit_code?: number;
+  timed_out: boolean;
+  started_at: string;
+  finished_at: string;
+}
+
 export interface LogEntry {
   id: number;
   project_id?: string;

@@ -1,11 +1,12 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use std::{
     env, fs,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{Arc, Mutex},
     thread,
+    time::{Duration, Instant},
 };
 use tauri::{
     menu::{Menu, MenuItem},
@@ -25,7 +26,7 @@ use models::{
     default_language, CreateProjectRequest, DashboardData, DiagnosticItem,
     HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport,
     ProjectFileContent, ProjectFileEntry, ProxyStatus, RuntimeInfo, ServerProcess, Settings,
-    TemplateInfo, TemplateManifest, UpdateProjectRequest,
+    TemplateInfo, TemplateManifest, TerminalRunResult, UpdateProjectRequest,
 };
 use security::validation::{
     is_allowed_project_type, validate_package_manager, validate_project_path, validate_project_type,
@@ -102,6 +103,7 @@ pub fn run() {
             list_project_files,
             read_project_file,
             write_project_file,
+            run_project_task,
             network_url,
             start_proxy,
             stop_proxy,
@@ -1260,6 +1262,55 @@ fn write_project_file(
 }
 
 #[tauri::command]
+fn run_project_task(
+    id: String,
+    task: String,
+    state: State<AppState>,
+) -> Result<TerminalRunResult, String> {
+    let project = project_by_id(&state.db_path, &id)?;
+    if !project.trusted {
+        return Err(
+            "Project is not trusted yet. Trust the project before running tasks.".to_string(),
+        );
+    }
+    let settings = read_settings_at(&state.db_path)?;
+    let (program, args) = project_task_command(&project, &settings, &task)?;
+    let started_at = now();
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "build",
+        &format!("Task started: {}", task),
+    )?;
+    let result = run_project_command_with_timeout(
+        &project,
+        &task,
+        &program,
+        &args,
+        u64::from(settings.process_timeout.max(5)),
+        started_at,
+    )?;
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        if result.exit_code == Some(0) && !result.timed_out {
+            "build"
+        } else {
+            "error"
+        },
+        &format!(
+            "Task finished: {} ({})",
+            task,
+            result
+                .exit_code
+                .map(|code| code.to_string())
+                .unwrap_or_else(|| "timeout".to_string())
+        ),
+    )?;
+    Ok(result)
+}
+
+#[tauri::command]
 fn list_servers(state: State<AppState>) -> Result<Vec<ServerProcess>, String> {
     list_servers_at(&state.db_path)
 }
@@ -1909,6 +1960,139 @@ fn should_skip_editor_entry(name: &str) -> bool {
     )
 }
 
+fn project_task_command(
+    project: &Project,
+    settings: &Settings,
+    task: &str,
+) -> Result<(String, Vec<String>), String> {
+    if !matches!(
+        project.project_type.as_str(),
+        "next" | "vite" | "astro" | "node" | "unknown"
+    ) {
+        return Err("Terminal tasks are available for Node.js projects.".to_string());
+    }
+    let manager = project
+        .package_manager
+        .clone()
+        .unwrap_or_else(|| package_manager(settings));
+    validate_package_manager(&manager)?;
+    let program = resolve_runtime(&manager, settings);
+    let args = match (manager.as_str(), task) {
+        ("npm", "install") => vec!["install"],
+        ("npm", "build") => vec!["run", "build"],
+        ("npm", "test") => vec!["run", "test"],
+        ("npm", "lint") => vec!["run", "lint"],
+        ("pnpm", "install") => vec!["install"],
+        ("pnpm", "build") => vec!["build"],
+        ("pnpm", "test") => vec!["test"],
+        ("pnpm", "lint") => vec!["lint"],
+        ("yarn", "install") => vec!["install"],
+        ("yarn", "build") => vec!["build"],
+        ("yarn", "test") => vec!["test"],
+        ("yarn", "lint") => vec!["lint"],
+        ("bun", "install") => vec!["install"],
+        ("bun", "build") => vec!["run", "build"],
+        ("bun", "test") => vec!["test"],
+        ("bun", "lint") => vec!["run", "lint"],
+        (_, _) => {
+            return Err(
+                "Unsupported task. Allowed tasks are install, build, test and lint.".to_string(),
+            )
+        }
+    };
+    Ok((program, args.into_iter().map(str::to_string).collect()))
+}
+
+fn run_project_command_with_timeout(
+    project: &Project,
+    task: &str,
+    program: &str,
+    args: &[String],
+    timeout_seconds: u64,
+    started_at: String,
+) -> Result<TerminalRunResult, String> {
+    let root = project_root(project)?;
+    let mut child = Command::new(program)
+        .args(args)
+        .current_dir(&root)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| friendly_spawn_error(project, program, error))?;
+    let pid = child.id();
+    let stdout = Arc::new(Mutex::new(Vec::new()));
+    let stderr = Arc::new(Mutex::new(Vec::new()));
+    let stdout_handle = child.stdout.take().map(|stream| {
+        let stdout = Arc::clone(&stdout);
+        thread::spawn(move || read_pipe_to_buffer(stream, stdout))
+    });
+    let stderr_handle = child.stderr.take().map(|stream| {
+        let stderr = Arc::clone(&stderr);
+        thread::spawn(move || read_pipe_to_buffer(stream, stderr))
+    });
+    let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            timed_out = true;
+            kill_process_tree(pid);
+            let _ = child.kill();
+            break child.wait().map_err(|error| error.to_string())?;
+        }
+        thread::sleep(Duration::from_millis(100));
+    };
+    if let Some(handle) = stdout_handle {
+        let _ = handle.join();
+    }
+    if let Some(handle) = stderr_handle {
+        let _ = handle.join();
+    }
+    let command = format!(
+        "{} {}",
+        program,
+        args.iter()
+            .map(|arg| {
+                if arg.contains(' ') {
+                    format!("\"{}\"", arg)
+                } else {
+                    arg.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    Ok(TerminalRunResult {
+        project_id: project.id.clone(),
+        task: task.to_string(),
+        command,
+        cwd: root.to_string_lossy().to_string(),
+        stdout: buffer_to_string(&stdout),
+        stderr: buffer_to_string(&stderr),
+        exit_code: status.code(),
+        timed_out,
+        started_at,
+        finished_at: now(),
+    })
+}
+
+fn read_pipe_to_buffer<R: Read>(mut stream: R, target: Arc<Mutex<Vec<u8>>>) {
+    let mut buffer = Vec::new();
+    let _ = stream.read_to_end(&mut buffer);
+    if let Ok(mut target) = target.lock() {
+        *target = buffer;
+    }
+}
+
+fn buffer_to_string(buffer: &Arc<Mutex<Vec<u8>>>) -> String {
+    buffer
+        .lock()
+        .map(|value| String::from_utf8_lossy(&value).to_string())
+        .unwrap_or_default()
+}
+
 fn user_error(error: &str) -> String {
     error.lines().next().unwrap_or(error).to_string()
 }
@@ -2535,6 +2719,37 @@ mod tests {
         assert_eq!(trust_runtime_for_project(&project, &settings), "php");
         project.project_type = "static".to_string();
         assert_eq!(trust_runtime_for_project(&project, &settings), "node");
+    }
+
+    #[test]
+    fn project_task_command_allows_only_known_tasks() {
+        let mut project = Project {
+            id: "p1".to_string(),
+            name: "Project".to_string(),
+            path: "C:\\Projects\\demo".to_string(),
+            project_type: "next".to_string(),
+            port: None,
+            command: None,
+            status: "stopped".to_string(),
+            package_manager: Some("pnpm".to_string()),
+            use_docker: false,
+            dev_port: None,
+            proxy_port: None,
+            last_started_at: None,
+            last_error: None,
+            use_turbopack: false,
+            trusted: true,
+            trusted_at: None,
+            trusted_runtime: None,
+            created_at: now(),
+            updated_at: now(),
+        };
+        let settings = default_settings();
+        let (_, args) = project_task_command(&project, &settings, "build").unwrap();
+        assert_eq!(args, ["build"]);
+        assert!(project_task_command(&project, &settings, "dev").is_err());
+        project.project_type = "php".to_string();
+        assert!(project_task_command(&project, &settings, "build").is_err());
     }
 
     #[test]

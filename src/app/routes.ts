@@ -8,6 +8,7 @@ import {
   Gauge,
   Globe2,
   Settings as SettingsIcon,
+  SquareTerminal,
   Terminal,
 } from 'lucide-react';
 
@@ -15,6 +16,7 @@ export const sections = [
   ['dashboard', 'nav.dashboard', Gauge],
   ['projects', 'nav.projects', Folder],
   ['editor', 'nav.editor', FileCode2],
+  ['terminal', 'nav.terminal', SquareTerminal],
   ['sandboxes', 'nav.sandboxes', Boxes],
   ['templates', 'nav.templates', AppWindow],
   ['servers', 'nav.servers', Activity],

@@ -73,3 +73,17 @@ pub(crate) struct ProxyStatus {
     pub(crate) preview_url: Option<String>,
     pub(crate) error: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct TerminalRunResult {
+    pub(crate) project_id: String,
+    pub(crate) task: String,
+    pub(crate) command: String,
+    pub(crate) cwd: String,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
+    pub(crate) exit_code: Option<i32>,
+    pub(crate) timed_out: bool,
+    pub(crate) started_at: String,
+    pub(crate) finished_at: String,
+}

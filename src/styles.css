@@ -296,6 +296,41 @@ h2 {
   margin-bottom: 8px;
 }
 
+.terminal-note,
+.terminal-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 10px;
+}
+
+.terminal-meta {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.terminal-output {
+  min-height: 440px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #0f172a;
+  color: #e5e7eb;
+  padding: 12px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .code-editor {
   width: 100%;
   min-height: 560px;

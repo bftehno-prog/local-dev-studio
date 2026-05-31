@@ -8,6 +8,7 @@ pub(crate) use editor::{ProjectFileContent, ProjectFileEntry};
 pub(crate) use logs::LogEntry;
 pub(crate) use process::{
     DashboardData, DiagnosticItem, PortInfo, ProxyStatus, RuntimeInfo, ServerProcess,
+    TerminalRunResult,
 };
 pub(crate) use project::{
     CreateProjectRequest, HostingCompatibilityReport, Project, ProjectDoctorCheck,

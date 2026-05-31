@@ -14,6 +14,7 @@ import { ServersPage } from '../features/servers/ServersPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
 import { SandboxesPage } from '../features/templates/SandboxesPage';
 import { TemplatesPage } from '../features/templates/TemplatesPage';
+import { TerminalPage } from '../features/terminal/TerminalPage';
 import { emptySettings } from '../lib/constants';
 import { translate } from '../lib/i18n';
 import type {
@@ -89,7 +90,9 @@ export default function App() {
   const refreshVisible = useCallback(async () => {
     const tasks: Promise<unknown>[] = [loadServersAndPorts()];
     if (active === 'dashboard') tasks.push(loadDashboard());
-    if (active === 'projects' || active === 'editor') tasks.push(loadProjects());
+    if (active === 'projects' || active === 'editor' || active === 'terminal') {
+      tasks.push(loadProjects());
+    }
     if (active === 'logs') tasks.push(loadLogs());
     if (active === 'templates' || active === 'sandboxes') tasks.push(loadTemplates());
     if (active === 'settings' || active === 'diagnostics') {
@@ -363,6 +366,15 @@ export default function App() {
           selectedProjectId={selectedProjectId}
           onSelectProject={setSelectedProjectId}
           onRun={run}
+          showError={showError}
+          t={t}
+        />
+      )}
+      {active === 'terminal' && (
+        <TerminalPage
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onSelectProject={setSelectedProjectId}
           showError={showError}
           t={t}
         />

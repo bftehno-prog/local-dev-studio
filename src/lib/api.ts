@@ -14,6 +14,7 @@ import type {
   ServerProcess,
   Settings,
   DiagnosticItem,
+  TerminalRunResult,
   RuntimeInfo,
   TemplateInfo,
   UpdateProjectRequest,
@@ -56,6 +57,8 @@ export const api = {
     invoke<ProjectFileContent>('read_project_file', { id, path }),
   writeProjectFile: (id: string, path: string, content: string) =>
     invoke<ProjectFileContent>('write_project_file', { id, path, content }),
+  runProjectTask: (id: string, task: string) =>
+    invoke<TerminalRunResult>('run_project_task', { id, task }),
   listServers: () => invoke<ServerProcess[]>('list_servers'),
   listPorts: () => invoke<PortInfo[]>('list_ports'),
   releasePort: (port: number) => invoke<void>('release_port', { port }),
