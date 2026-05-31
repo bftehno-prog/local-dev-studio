@@ -190,6 +190,7 @@ h2 {
 .device-tabs,
 .preview-actions,
 .preview-controls,
+.proxy-row,
 .url-row {
   display: flex;
   align-items: center;
@@ -471,6 +472,15 @@ tr.selected {
 .url-row input {
   border: 0;
   background: transparent;
+}
+
+.proxy-row {
+  flex-wrap: wrap;
+}
+
+.proxy-row button {
+  min-height: 28px;
+  font-size: 12px;
 }
 
 .device-tabs {

@@ -214,7 +214,7 @@ fn relay_bidirectional(client: TcpStream, upstream: TcpStream) {
     });
     let client_to_upstream = thread::spawn(move || {
         let _ = std::io::copy(&mut client_reader, &mut upstream_writer);
-        let _ = upstream_writer.shutdown(Shutdown::Both);
+        let _ = upstream_writer.shutdown(Shutdown::Write);
     });
     let _ = upstream_to_client.join();
     let _ = client_to_upstream.join();

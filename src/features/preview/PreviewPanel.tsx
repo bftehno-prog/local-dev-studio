@@ -1,9 +1,9 @@
-import { Copy, Globe2, Link, Play, RefreshCcw } from 'lucide-react';
+import { Copy, Globe2, Link, Play, RefreshCcw, Square } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { devices } from '../../app/routes';
 import type { TFunction } from '../../app/types';
 import { api } from '../../shared/api/commands';
-import type { Project, ServerProcess, Settings } from '../../lib/types';
+import type { Project, ProxyStatus, ServerProcess, Settings } from '../../lib/types';
 import type { TranslationKey } from '../../lib/i18n';
 
 type PreviewPanelProps = {
@@ -32,6 +32,8 @@ type PreviewPanelProps = {
   localPreviewUrl: string;
   networkPreviewUrl: string;
   activePreviewServer?: ServerProcess;
+  proxyStatus: ProxyStatus | null;
+  setProxyStatus: (value: ProxyStatus | null) => void;
   showError: (error: unknown) => void;
   run: (action: () => Promise<unknown>, success: string) => Promise<void>;
 };
@@ -61,9 +63,41 @@ export function PreviewPanel({
   localPreviewUrl,
   networkPreviewUrl,
   activePreviewServer,
+  proxyStatus,
+  setProxyStatus,
   showError,
   run,
 }: PreviewPanelProps) {
+  const proxyProjectId = activePreviewServer?.project_id || selectedProject?.id || '';
+
+  async function activateProxyPreview(action: 'start' | 'restart') {
+    if (!proxyProjectId) return;
+    await run(
+      async () => {
+        const status =
+          action === 'start'
+            ? await api.startProxy(proxyProjectId)
+            : await api.restartProxy(proxyProjectId);
+        setProxyStatus(status);
+        if (status.preview_url) {
+          setManualPreviewUrl('');
+          setPreviewUrl(status.preview_url);
+          setActivePreviewServerId(status.project_id);
+          setPreviewKey((value) => value + 1);
+        }
+      },
+      action === 'start' ? t('message.proxyStarted') : t('message.proxyRestarted'),
+    );
+  }
+
+  async function stopProxyPreview() {
+    if (!proxyProjectId) return;
+    await run(async () => {
+      const status = await api.stopProxy(proxyProjectId);
+      setProxyStatus(status);
+    }, t('message.proxyStopped'));
+  }
+
   return (
     <aside className="preview">
       <div className="preview-header">
@@ -127,6 +161,26 @@ export function PreviewPanel({
             }}
             placeholder="http://localhost:3000"
           />
+        </div>
+        <div className="proxy-row">
+          <span className={`status ${proxyStatus?.running ? 'running' : ''}`}>
+            {t('preview.proxy')}: {proxyStatus?.running ? t('status.running') : t('status.stopped')}
+          </span>
+          <button disabled={!proxyProjectId} onClick={() => void activateProxyPreview('start')}>
+            <Link size={15} /> {t('action.startProxy')}
+          </button>
+          <button
+            disabled={!proxyProjectId || !proxyStatus?.running}
+            onClick={() => void activateProxyPreview('restart')}
+          >
+            <RefreshCcw size={15} /> {t('action.restartProxy')}
+          </button>
+          <button
+            disabled={!proxyProjectId || !proxyStatus?.running}
+            onClick={() => void stopProxyPreview()}
+          >
+            <Square size={15} /> {t('action.stopProxy')}
+          </button>
         </div>
       </div>
       <div className="device-tabs">
@@ -195,6 +249,12 @@ export function PreviewPanel({
               <>
                 <span>{t('preview.health')}</span>
                 <code>{activePreviewServer.status}</code>
+              </>
+            )}
+            {proxyStatus?.preview_url && (
+              <>
+                <span>{t('preview.proxyUrl')}</span>
+                <code>{proxyStatus.preview_url}</code>
               </>
             )}
           </div>

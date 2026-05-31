@@ -23,6 +23,7 @@ import type {
   PortInfo,
   Project,
   ProjectDoctorReport,
+  ProxyStatus,
   RuntimeInfo,
   ServerProcess,
   Settings,
@@ -52,6 +53,7 @@ export default function App() {
   const [fitPreview, setFitPreview] = useState(true);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [proxyStatus, setProxyStatus] = useState<ProxyStatus | null>(null);
   const [device, setDevice] = useState('Desktop');
   const [logLevel, setLogLevel] = useState('');
   const [logSearch, setLogSearch] = useState('');
@@ -155,10 +157,29 @@ export default function App() {
     const activeServer =
       servers.find((server) => server.project_id === activePreviewServerId) ?? running;
     if (!manualPreviewUrl) {
-      setPreviewUrl(activeServer?.url ?? '');
+      const proxyUrl =
+        proxyStatus?.running && proxyStatus.project_id === activeServer?.project_id
+          ? proxyStatus.preview_url
+          : undefined;
+      setPreviewUrl(proxyUrl || activeServer?.url || '');
       setActivePreviewServerId(activeServer?.project_id ?? '');
     }
-  }, [activePreviewServerId, manualPreviewUrl, selectedProject, servers]);
+  }, [activePreviewServerId, manualPreviewUrl, proxyStatus, selectedProject, servers]);
+
+  const previewProjectId = activePreviewServerId || selectedProject?.id || '';
+
+  useEffect(() => {
+    if (!previewProjectId) {
+      setProxyStatus(null);
+      return;
+    }
+    void api
+      .getProxyStatus(previewProjectId)
+      .then(setProxyStatus)
+      .catch(() => {
+        setProxyStatus(null);
+      });
+  }, [previewProjectId, servers]);
 
   function showError(error: unknown) {
     setMessage(normalizeApiError(error).message);
@@ -303,6 +324,8 @@ export default function App() {
           localPreviewUrl={localPreviewUrl}
           networkPreviewUrl={networkPreviewUrl}
           activePreviewServer={activePreviewServer}
+          proxyStatus={proxyStatus}
+          setProxyStatus={setProxyStatus}
           showError={showError}
           run={run}
         />

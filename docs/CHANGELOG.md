@@ -45,6 +45,7 @@
 - Rust port manager service for port lists and LAN preview URL helpers.
 - Server process listing moved into the Rust process manager service.
 - Real local TCP reverse proxy service for project preview HTTP/WebSocket forwarding.
+- Live Preview proxy controls with status, restart, stop and proxy URL display.
 
 ### Changed
 
@@ -82,6 +83,7 @@
 - Port list construction moved out of `src-tauri/src/lib.rs`.
 - Server process SQL, stale cleanup and CPU/memory sampling moved out of `src-tauri/src/lib.rs`.
 - Preview proxy commands added for start, stop, restart, status and proxy preview URL lookup.
+- Live Preview can switch the iframe to the stable proxy route after proxy start.
 
 ### Fixed
 
