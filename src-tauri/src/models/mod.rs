@@ -1,8 +1,10 @@
+pub(crate) mod editor;
 pub(crate) mod logs;
 pub(crate) mod process;
 pub(crate) mod project;
 pub(crate) mod settings;
 
+pub(crate) use editor::{ProjectFileContent, ProjectFileEntry};
 pub(crate) use logs::LogEntry;
 pub(crate) use process::{
     DashboardData, DiagnosticItem, PortInfo, ProxyStatus, RuntimeInfo, ServerProcess,

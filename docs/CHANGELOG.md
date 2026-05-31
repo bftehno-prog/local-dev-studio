@@ -46,6 +46,7 @@
 - Server process listing moved into the Rust process manager service.
 - Real local TCP reverse proxy service for project preview HTTP/WebSocket forwarding.
 - Live Preview proxy controls with status, restart, stop and proxy URL display.
+- Built-in project file editor with safe project-root file listing, reading and saving.
 
 ### Changed
 
@@ -84,6 +85,7 @@
 - Server process SQL, stale cleanup and CPU/memory sampling moved out of `src-tauri/src/lib.rs`.
 - Preview proxy commands added for start, stop, restart, status and proxy preview URL lookup.
 - Live Preview can switch the iframe to the stable proxy route after proxy start.
+- Editor skips heavy generated folders and limits editable files to UTF-8 text content.
 
 ### Fixed
 

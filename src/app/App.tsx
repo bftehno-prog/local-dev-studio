@@ -4,6 +4,7 @@ import type { SectionId } from './routes';
 import type { TFunction } from './types';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DiagnosticsPage } from '../features/diagnostics/DiagnosticsPage';
+import { EditorPage } from '../features/editor/EditorPage';
 import { LogsPage } from '../features/logs/LogsPage';
 import { OnboardingPage } from '../features/onboarding/OnboardingPage';
 import { PortsPage } from '../features/ports/PortsPage';
@@ -88,7 +89,7 @@ export default function App() {
   const refreshVisible = useCallback(async () => {
     const tasks: Promise<unknown>[] = [loadServersAndPorts()];
     if (active === 'dashboard') tasks.push(loadDashboard());
-    if (active === 'projects') tasks.push(loadProjects());
+    if (active === 'projects' || active === 'editor') tasks.push(loadProjects());
     if (active === 'logs') tasks.push(loadLogs());
     if (active === 'templates' || active === 'sandboxes') tasks.push(loadTemplates());
     if (active === 'settings' || active === 'diagnostics') {
@@ -353,6 +354,16 @@ export default function App() {
           onDoctor={setDoctorReport}
           onHosting={setHostingReport}
           onRun={run}
+          t={t}
+        />
+      )}
+      {active === 'editor' && (
+        <EditorPage
+          projects={projects}
+          selectedProjectId={selectedProjectId}
+          onSelectProject={setSelectedProjectId}
+          onRun={run}
+          showError={showError}
           t={t}
         />
       )}

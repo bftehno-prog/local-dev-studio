@@ -6,6 +6,8 @@ import type {
   PortInfo,
   Project,
   ProjectDoctorReport,
+  ProjectFileContent,
+  ProjectFileEntry,
   HostingCompatibilityReport,
   ProxyStatus,
   ProjectType,
@@ -49,6 +51,11 @@ export const api = {
   getPreviewUrl: (id: string) => invoke<string>('get_preview_url', { id }),
   getProxyStatus: (id: string) => invoke<ProxyStatus>('get_proxy_status', { id }),
   clearCache: (id: string) => invoke<void>('clear_project_cache', { id }),
+  listProjectFiles: (id: string) => invoke<ProjectFileEntry[]>('list_project_files', { id }),
+  readProjectFile: (id: string, path: string) =>
+    invoke<ProjectFileContent>('read_project_file', { id, path }),
+  writeProjectFile: (id: string, path: string, content: string) =>
+    invoke<ProjectFileContent>('write_project_file', { id, path, content }),
   listServers: () => invoke<ServerProcess[]>('list_servers'),
   listPorts: () => invoke<PortInfo[]>('list_ports'),
   releasePort: (port: number) => invoke<void>('release_port', { port }),

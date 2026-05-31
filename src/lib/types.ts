@@ -75,6 +75,19 @@ export interface ProxyStatus {
   error?: string;
 }
 
+export interface ProjectFileEntry {
+  path: string;
+  name: string;
+  is_dir: boolean;
+  size?: number;
+}
+
+export interface ProjectFileContent {
+  path: string;
+  content: string;
+  size: number;
+}
+
 export interface LogEntry {
   id: number;
   project_id?: string;

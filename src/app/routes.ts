@@ -3,6 +3,7 @@ import {
   AppWindow,
   Boxes,
   ClipboardCheck,
+  FileCode2,
   Folder,
   Gauge,
   Globe2,
@@ -13,6 +14,7 @@ import {
 export const sections = [
   ['dashboard', 'nav.dashboard', Gauge],
   ['projects', 'nav.projects', Folder],
+  ['editor', 'nav.editor', FileCode2],
   ['sandboxes', 'nav.sandboxes', Boxes],
   ['templates', 'nav.templates', AppWindow],
   ['servers', 'nav.servers', Activity],

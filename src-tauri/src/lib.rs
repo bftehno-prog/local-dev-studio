@@ -23,8 +23,9 @@ mod utils;
 
 use models::{
     default_language, CreateProjectRequest, DashboardData, DiagnosticItem,
-    HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport, ProxyStatus,
-    RuntimeInfo, ServerProcess, Settings, TemplateInfo, TemplateManifest, UpdateProjectRequest,
+    HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport,
+    ProjectFileContent, ProjectFileEntry, ProxyStatus, RuntimeInfo, ServerProcess, Settings,
+    TemplateInfo, TemplateManifest, UpdateProjectRequest,
 };
 use security::validation::{
     is_allowed_project_type, validate_package_manager, validate_project_path, validate_project_type,
@@ -98,6 +99,9 @@ pub fn run() {
             open_in_code,
             open_external_url,
             clear_project_cache,
+            list_project_files,
+            read_project_file,
+            write_project_file,
             network_url,
             start_proxy,
             stop_proxy,
@@ -1190,6 +1194,72 @@ fn clear_project_cache(id: String, state: State<AppState>) -> Result<(), String>
 }
 
 #[tauri::command]
+fn list_project_files(id: String, state: State<AppState>) -> Result<Vec<ProjectFileEntry>, String> {
+    let project = project_by_id(&state.db_path, &id)?;
+    let root = project_root(&project)?;
+    let mut files = Vec::new();
+    collect_project_files(&root, &root, 0, &mut files)?;
+    Ok(files)
+}
+
+#[tauri::command]
+fn read_project_file(
+    id: String,
+    path: String,
+    state: State<AppState>,
+) -> Result<ProjectFileContent, String> {
+    let project = project_by_id(&state.db_path, &id)?;
+    let root = project_root(&project)?;
+    let file_path = resolve_project_file(&root, &path)?;
+    let metadata = fs::metadata(&file_path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Selected path is not a file.".to_string());
+    }
+    if metadata.len() > 512 * 1024 {
+        return Err("File is too large for the built-in editor.".to_string());
+    }
+    let content = fs::read_to_string(&file_path)
+        .map_err(|_| "Only UTF-8 text files can be opened in the built-in editor.".to_string())?;
+    Ok(ProjectFileContent {
+        path: normalize_relative_path(&path)?,
+        content,
+        size: metadata.len(),
+    })
+}
+
+#[tauri::command]
+fn write_project_file(
+    id: String,
+    path: String,
+    content: String,
+    state: State<AppState>,
+) -> Result<ProjectFileContent, String> {
+    let project = project_by_id(&state.db_path, &id)?;
+    let root = project_root(&project)?;
+    let file_path = resolve_project_file(&root, &path)?;
+    let metadata = fs::metadata(&file_path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Selected path is not a file.".to_string());
+    }
+    if content.len() > 512 * 1024 {
+        return Err("File is too large for the built-in editor.".to_string());
+    }
+    fs::write(&file_path, content).map_err(|error| error.to_string())?;
+    let saved = fs::read_to_string(&file_path).map_err(|error| error.to_string())?;
+    insert_log(
+        &state.db_path,
+        Some(&project.id),
+        "info",
+        &format!("File saved: {}", normalize_relative_path(&path)?),
+    )?;
+    Ok(ProjectFileContent {
+        path: normalize_relative_path(&path)?,
+        size: saved.len() as u64,
+        content: saved,
+    })
+}
+
+#[tauri::command]
 fn list_servers(state: State<AppState>) -> Result<Vec<ServerProcess>, String> {
     list_servers_at(&state.db_path)
 }
@@ -1732,6 +1802,113 @@ fn ensure_file(path: PathBuf, message: &str) -> Result<(), String> {
     }
 }
 
+fn project_root(project: &Project) -> Result<PathBuf, String> {
+    let root = Path::new(&project.path);
+    if !root.is_dir() {
+        return Err("Project folder does not exist.".to_string());
+    }
+    root.canonicalize().map_err(|error| error.to_string())
+}
+
+fn normalize_relative_path(path: &str) -> Result<String, String> {
+    let trimmed = path.trim().replace('\\', "/");
+    if trimmed.is_empty() {
+        return Err("File path is required.".to_string());
+    }
+    if trimmed
+        .split('/')
+        .next()
+        .is_some_and(|part| part.contains(':'))
+    {
+        return Err("File path must stay inside the project folder.".to_string());
+    }
+    let relative = Path::new(&trimmed);
+    if relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err("File path must stay inside the project folder.".to_string());
+    }
+    Ok(trimmed
+        .split('/')
+        .filter(|part| !part.is_empty() && *part != ".")
+        .collect::<Vec<_>>()
+        .join("/"))
+}
+
+fn resolve_project_file(root: &Path, path: &str) -> Result<PathBuf, String> {
+    let relative = normalize_relative_path(path)?;
+    let target = root.join(relative);
+    let canonical = target.canonicalize().map_err(|error| error.to_string())?;
+    if !canonical.starts_with(root) {
+        return Err("File path must stay inside the project folder.".to_string());
+    }
+    Ok(canonical)
+}
+
+fn collect_project_files(
+    root: &Path,
+    dir: &Path,
+    depth: usize,
+    files: &mut Vec<ProjectFileEntry>,
+) -> Result<(), String> {
+    if depth > 6 || files.len() >= 700 {
+        return Ok(());
+    }
+    let mut entries = fs::read_dir(dir)
+        .map_err(|error| error.to_string())?
+        .filter_map(Result::ok)
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_lowercase());
+    for entry in entries {
+        if files.len() >= 700 {
+            break;
+        }
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if should_skip_editor_entry(&name) {
+            continue;
+        }
+        let metadata = entry.metadata().map_err(|error| error.to_string())?;
+        let relative = path
+            .strip_prefix(root)
+            .map_err(|error| error.to_string())?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let is_dir = metadata.is_dir();
+        files.push(ProjectFileEntry {
+            path: relative,
+            name,
+            is_dir,
+            size: if metadata.is_file() {
+                Some(metadata.len())
+            } else {
+                None
+            },
+        });
+        if is_dir {
+            collect_project_files(root, &path, depth + 1, files)?;
+        }
+    }
+    Ok(())
+}
+
+fn should_skip_editor_entry(name: &str) -> bool {
+    matches!(
+        name,
+        "node_modules"
+            | ".git"
+            | ".next"
+            | "dist"
+            | "build"
+            | "target"
+            | ".turbo"
+            | ".vercel"
+            | ".DS_Store"
+    )
+}
+
 fn user_error(error: &str) -> String {
     error.lines().next().unwrap_or(error).to_string()
 }
@@ -2223,6 +2400,31 @@ mod tests {
         validate_project_path(&root).unwrap();
         fs::remove_dir_all(&root).unwrap();
         assert!(validate_project_path(&root).is_err());
+    }
+
+    #[test]
+    fn editor_relative_path_rejects_traversal() {
+        assert_eq!(
+            normalize_relative_path("src\\main.tsx").unwrap(),
+            "src/main.tsx"
+        );
+        assert!(normalize_relative_path("../secret.txt").is_err());
+        assert!(normalize_relative_path("C:/Windows/system.ini").is_err());
+    }
+
+    #[test]
+    fn editor_file_listing_skips_heavy_folders() {
+        let root = temp_project("editor-list");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(root.join("node_modules")).unwrap();
+        fs::write(root.join("src").join("main.tsx"), "export {};").unwrap();
+        fs::write(root.join("node_modules").join("ignored.js"), "ignored").unwrap();
+        let mut files = Vec::new();
+        collect_project_files(&root, &root, 0, &mut files).unwrap();
+
+        assert!(files.iter().any(|file| file.path == "src/main.tsx"));
+        assert!(!files.iter().any(|file| file.path.contains("node_modules")));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

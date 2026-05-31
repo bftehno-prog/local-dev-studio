@@ -64,7 +64,8 @@ button:disabled {
 }
 
 input,
-select {
+select,
+textarea {
   min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 4px;
@@ -240,6 +241,13 @@ h2 {
   gap: 14px;
 }
 
+.editor-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 620px;
+}
+
 .panel {
   padding: 14px;
   overflow: auto;
@@ -253,6 +261,49 @@ h2 {
 .project-detail-actions {
   align-items: flex-start;
   flex-wrap: wrap;
+}
+
+.file-tree {
+  display: grid;
+  gap: 2px;
+  max-height: 600px;
+  overflow: auto;
+}
+
+.file-tree button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 28px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+
+.file-tree button.active {
+  border-color: var(--line);
+  background: var(--surface-2);
+}
+
+.file-tree button:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+
+.editor-toolbar {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.code-editor {
+  width: 100%;
+  min-height: 560px;
+  resize: vertical;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
 }
 
 .wizard-grid {
@@ -603,6 +654,7 @@ iframe {
 @media (max-width: 760px) {
   .app,
   .grid.two,
+  .editor-grid,
   .metrics {
     grid-template-columns: 1fr;
   }
