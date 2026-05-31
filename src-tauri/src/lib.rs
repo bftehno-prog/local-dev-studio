@@ -25,8 +25,9 @@ mod utils;
 use models::{
     default_language, CreateProjectRequest, DashboardData, DiagnosticItem,
     HostingCompatibilityReport, LogEntry, PortInfo, Project, ProjectDoctorReport,
-    ProjectFileContent, ProjectFileEntry, ProxyStatus, RuntimeInfo, ServerProcess, Settings,
-    TemplateInfo, TemplateManifest, TerminalRunResult, UpdateProjectRequest,
+    ProjectFileContent, ProjectFileEntry, ProxyStatus, RecentProjectFile, RuntimeInfo,
+    ServerProcess, Settings, TemplateInfo, TemplateManifest, TerminalRunResult,
+    UpdateProjectRequest,
 };
 use security::validation::{
     is_allowed_project_type, validate_package_manager, validate_project_path, validate_project_type,
@@ -101,6 +102,7 @@ pub fn run() {
             open_external_url,
             clear_project_cache,
             list_project_files,
+            list_recent_files,
             read_project_file,
             write_project_file,
             run_project_task,
@@ -1296,6 +1298,12 @@ fn list_project_files(id: String, state: State<AppState>) -> Result<Vec<ProjectF
 }
 
 #[tauri::command]
+fn list_recent_files(id: String, state: State<AppState>) -> Result<Vec<RecentProjectFile>, String> {
+    let _ = project_by_id(&state.db_path, &id)?;
+    recent_files_for_project(&state.db_path, &id)
+}
+
+#[tauri::command]
 fn read_project_file(
     id: String,
     path: String,
@@ -1313,8 +1321,10 @@ fn read_project_file(
     }
     let content = fs::read_to_string(&file_path)
         .map_err(|_| "Only UTF-8 text files can be opened in the built-in editor.".to_string())?;
+    let path = normalize_relative_path(&path)?;
+    upsert_recent_file(&state.db_path, &project.id, &path)?;
     Ok(ProjectFileContent {
-        path: normalize_relative_path(&path)?,
+        path,
         content,
         size: metadata.len(),
     })
@@ -2051,6 +2061,76 @@ fn should_skip_editor_entry(name: &str) -> bool {
     )
 }
 
+fn recent_files_for_project(
+    db_path: &Path,
+    project_id: &str,
+) -> Result<Vec<RecentProjectFile>, String> {
+    let conn = connect(db_path)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT project_id, path, language, opened_at
+             FROM recent_files
+             WHERE project_id = ?1
+             ORDER BY opened_at DESC
+             LIMIT 12",
+        )
+        .map_err(|error| error.to_string())?;
+    let rows = stmt
+        .query_map(params![project_id], |row| {
+            Ok(RecentProjectFile {
+                project_id: row.get(0)?,
+                path: row.get(1)?,
+                language: row.get(2)?,
+                opened_at: row.get(3)?,
+            })
+        })
+        .map_err(|error| error.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())
+}
+
+fn upsert_recent_file(db_path: &Path, project_id: &str, path: &str) -> Result<(), String> {
+    let conn = connect(db_path)?;
+    conn.execute(
+        "INSERT INTO recent_files (id, project_id, path, language, opened_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(project_id, path)
+         DO UPDATE SET language = excluded.language, opened_at = excluded.opened_at",
+        params![
+            Uuid::new_v4().to_string(),
+            project_id,
+            path,
+            language_for_path(path),
+            now()
+        ],
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+fn language_for_path(path: &str) -> Option<String> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let language = match extension.as_str() {
+        "css" => "css",
+        "html" => "html",
+        "js" | "mjs" => "javascript",
+        "jsx" => "javascriptreact",
+        "json" => "json",
+        "md" => "markdown",
+        "php" => "php",
+        "ts" => "typescript",
+        "tsx" => "typescriptreact",
+        "txt" => "plaintext",
+        "yml" | "yaml" => "yaml",
+        _ => return None,
+    };
+    Some(language.to_string())
+}
+
 fn project_task_command(
     project: &Project,
     settings: &Settings,
@@ -2700,6 +2780,16 @@ mod tests {
         assert!(files.iter().any(|file| file.path == "src/main.tsx"));
         assert!(!files.iter().any(|file| file.path.contains("node_modules")));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn language_for_path_detects_editor_language() {
+        assert_eq!(
+            language_for_path("app/page.tsx").as_deref(),
+            Some("typescriptreact")
+        );
+        assert_eq!(language_for_path("README.md").as_deref(), Some("markdown"));
+        assert_eq!(language_for_path("image.png"), None);
     }
 
     #[test]

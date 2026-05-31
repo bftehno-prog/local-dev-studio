@@ -49,6 +49,7 @@
 - Built-in project file editor with safe project-root file listing, reading and saving.
 - Built-in project terminal task runner for trusted Node.js projects.
 - Docker, Docker daemon and WSL diagnostics in environment checks.
+- Recent files are persisted for the built-in project editor.
 
 ### Changed
 
@@ -90,6 +91,7 @@
 - Editor skips heavy generated folders and limits editable files to UTF-8 text content.
 - Terminal tasks are restricted to install, build, test and lint with process timeout handling.
 - Projects marked for Docker now fail early with clear Docker readiness errors.
+- Opening a file in Editor now updates the recent files list for the selected project.
 
 ### Fixed
 

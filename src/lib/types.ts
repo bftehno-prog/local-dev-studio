@@ -88,6 +88,13 @@ export interface ProjectFileContent {
   size: number;
 }
 
+export interface RecentProjectFile {
+  project_id: string;
+  path: string;
+  language?: string;
+  opened_at: string;
+}
+
 export interface TerminalRunResult {
   project_id: string;
   task: string;

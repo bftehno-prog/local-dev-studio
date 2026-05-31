@@ -17,6 +17,7 @@ import type {
   TerminalRunResult,
   RuntimeInfo,
   TemplateInfo,
+  RecentProjectFile,
   UpdateProjectRequest,
 } from './types';
 
@@ -53,6 +54,7 @@ export const api = {
   getProxyStatus: (id: string) => invoke<ProxyStatus>('get_proxy_status', { id }),
   clearCache: (id: string) => invoke<void>('clear_project_cache', { id }),
   listProjectFiles: (id: string) => invoke<ProjectFileEntry[]>('list_project_files', { id }),
+  listRecentFiles: (id: string) => invoke<RecentProjectFile[]>('list_recent_files', { id }),
   readProjectFile: (id: string, path: string) =>
     invoke<ProjectFileContent>('read_project_file', { id, path }),
   writeProjectFile: (id: string, path: string, content: string) =>

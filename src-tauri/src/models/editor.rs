@@ -14,3 +14,11 @@ pub(crate) struct ProjectFileContent {
     pub(crate) content: String,
     pub(crate) size: u64,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct RecentProjectFile {
+    pub(crate) project_id: String,
+    pub(crate) path: String,
+    pub(crate) language: Option<String>,
+    pub(crate) opened_at: String,
+}

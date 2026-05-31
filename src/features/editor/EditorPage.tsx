@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FileText, Folder, RefreshCcw, Save } from 'lucide-react';
 import type { TFunction } from '../../app/types';
-import type { Project, ProjectFileContent, ProjectFileEntry } from '../../lib/types';
+import type {
+  Project,
+  ProjectFileContent,
+  ProjectFileEntry,
+  RecentProjectFile,
+} from '../../lib/types';
 import { api } from '../../shared/lib/api';
 import { Panel } from '../../components/ui/Panel';
 
@@ -23,6 +28,7 @@ export function EditorPage({
   t,
 }: EditorPageProps) {
   const [files, setFiles] = useState<ProjectFileEntry[]>([]);
+  const [recentFiles, setRecentFiles] = useState<RecentProjectFile[]>([]);
   const [activeFile, setActiveFile] = useState<ProjectFileContent | null>(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -38,13 +44,19 @@ export function EditorPage({
     async (projectId = selectedProjectId) => {
       if (!projectId) {
         setFiles([]);
+        setRecentFiles([]);
         setActiveFile(null);
         setDraft('');
         return;
       }
       setLoading(true);
       try {
-        setFiles(await api.listProjectFiles(projectId));
+        const [nextFiles, nextRecentFiles] = await Promise.all([
+          api.listProjectFiles(projectId),
+          api.listRecentFiles(projectId),
+        ]);
+        setFiles(nextFiles);
+        setRecentFiles(nextRecentFiles);
       } finally {
         setLoading(false);
       }
@@ -54,9 +66,15 @@ export function EditorPage({
 
   async function openFile(file: ProjectFileEntry) {
     if (!selectedProjectId || file.is_dir) return;
-    const content = await api.readProjectFile(selectedProjectId, file.path);
+    await openFilePath(file.path);
+  }
+
+  async function openFilePath(path: string) {
+    if (!selectedProjectId) return;
+    const content = await api.readProjectFile(selectedProjectId, path);
     setActiveFile(content);
     setDraft(content.content);
+    setRecentFiles(await api.listRecentFiles(selectedProjectId));
   }
 
   async function saveFile() {
@@ -101,6 +119,20 @@ export function EditorPage({
       </Panel>
       <div className="editor-grid">
         <Panel title={selectedProject?.name || t('editor.files')}>
+          {recentFiles.length > 0 && (
+            <div className="recent-files">
+              <span className="muted">{t('editor.recent')}</span>
+              {recentFiles.map((file) => (
+                <button
+                  key={file.path}
+                  onClick={() => void openFilePath(file.path).catch(showError)}
+                >
+                  <FileText size={14} />
+                  <span>{file.path}</span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="file-tree">
             {visibleFiles.length === 0 && <p className="muted">{t('editor.noFiles')}</p>}
             {visibleFiles.map((file) => (
